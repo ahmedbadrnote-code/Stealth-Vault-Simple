@@ -1,0 +1,1652 @@
+package com.stealth.vaultnotes
+
+import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfRenderer
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.os.Build
+import android.os.ParcelFileDescriptor
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+
+// عقد مخصص يعتمد حصرياً على Storage Access Framework (Intent.ACTION_OPEN_DOCUMENT)
+// لضمان صلاحية قراءة وحذف الملف الأصلي من المعرض دون استخدام Photo Picker نهائياً
+class SafOpenMultipleDocumentsContract : ActivityResultContract<Array<String>, List<Uri>>() {
+    override fun createIntent(context: Context, input: Array<String>): Intent {
+        return Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = if (input.size == 1) input[0] else "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, input)
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            )
+        }
+    }
+
+    override fun parseResult(resultCode: Int, intent: Intent?): List<Uri> {
+        if (resultCode != Activity.RESULT_OK || intent == null) return emptyList()
+        val uris = LinkedHashSet<Uri>()
+        intent.data?.let { uris.add(it) }
+        intent.clipData?.let { clip ->
+            for (i in 0 until clip.itemCount) {
+                clip.getItemAt(i).uri?.let { uris.add(it) }
+            }
+        }
+        return uris.toList()
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun SecretVaultScreen(
+    onExitVault: () -> Unit,
+    onPickerStateChange: (Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val dateFormatter = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()) }
+
+    var currentTab by remember { mutableIntStateOf(0) }
+    var vaultFiles by remember { mutableStateOf(StorageRepository.loadVaultFiles(context)) }
+    var secretNotes by remember { mutableStateOf(StorageRepository.loadSecretNotes(context)) }
+    var searchQuery by remember { mutableStateOf("") }
+    var sortOption by remember { mutableStateOf(SortOption.DATE_DESC) }
+    val vaultViewPrefs = remember { context.getSharedPreferences("vault_view_preferences", Context.MODE_PRIVATE) }
+    val restoreLocationPrefs = remember { context.getSharedPreferences("vault_restore_preferences", Context.MODE_PRIVATE) }
+    var isGridView by remember { mutableStateOf(vaultViewPrefs.getBoolean("grid_view", false)) }
+    var currentSubFolder by remember { mutableStateOf("General") }
+    var showSecretTrash by remember { mutableStateOf(false) }
+    var showNewFolderDialog by remember { mutableStateOf(false) }
+    var showRenameFolderDialog by remember { mutableStateOf(false) }
+    var folderBeingRenamed by remember { mutableStateOf("") }
+    var showMoveFolderDialog by remember { mutableStateOf(false) }
+    var showEmptyTrashDialog by remember { mutableStateOf(false) }
+    var isBusy by remember { mutableStateOf(false) }
+    var busyMessage by remember { mutableStateOf("") }
+
+    var savedSubFolders by remember(currentTab) {
+        mutableStateOf(
+            StorageRepository.loadVaultFolders(
+                context,
+                when (currentTab) {
+                    0 -> VaultMediaType.PHOTO
+                    1 -> VaultMediaType.VIDEO
+                    else -> VaultMediaType.DOCUMENT
+                }
+            )
+        )
+    }
+
+    val selectedIds = remember { mutableStateListOf<String>() }
+    var activeViewerIndex by remember { mutableStateOf<Int?>(null) }
+    var activePdfItem by remember { mutableStateOf<VaultFileItem?>(null) }
+    var editingSecretNote by remember { mutableStateOf<NoteItem?>(null) }
+    var pendingRestoreItems by remember { mutableStateOf<List<VaultFileItem>>(emptyList()) }
+    LaunchedEffect(currentTab) {
+        currentSubFolder = savedSubFolders.firstOrNull() ?: "General"
+        selectedIds.clear()
+    }
+
+    BackHandler(enabled = activeViewerIndex == null && activePdfItem == null && editingSecretNote == null && !isBusy) {
+        when {
+            selectedIds.isNotEmpty() -> selectedIds.clear()
+            currentTab == 4 -> currentTab = 0
+            currentTab == 3 && showSecretTrash -> showSecretTrash = false
+            currentTab in 0..2 && currentSubFolder != (savedSubFolders.firstOrNull() ?: "General") -> currentSubFolder = savedSubFolders.firstOrNull() ?: "General"
+            searchQuery.isNotEmpty() -> searchQuery = ""
+            else -> {
+                SecurityCrypto.lockVaultSession(context)
+                onExitVault()
+            }
+        }
+    }
+
+// استيراد وتشفير الملفات وحذف الأصل عبر SAF (Intent.ACTION_OPEN_DOCUMENT)
+    val safImportLauncher = rememberLauncherForActivityResult(SafOpenMultipleDocumentsContract()) { uris: List<Uri> ->
+        onPickerStateChange(false)
+        if (uris.isNotEmpty()) {
+            val targetType = when (currentTab) {
+                0 -> VaultMediaType.PHOTO
+                1 -> VaultMediaType.VIDEO
+                else -> VaultMediaType.DOCUMENT
+            }
+            val targetFolder = currentSubFolder
+            isBusy = true
+            busyMessage = "Encrypting & moving ${uris.size} file(s)..."
+            scope.launch {
+                val updated = vaultFiles.toMutableList()
+                val imported = mutableListOf<Pair<Uri, VaultFileItem>>()
+                val savedOk = withContext(Dispatchers.IO) {
+                    uris.forEach { uri ->
+                        val item = SecurityCrypto.importAndMoveFileViaSAF(context, uri, targetType, targetFolder)
+                        if (item != null) {
+                            updated.add(item)
+                            imported.add(uri to item)
+                        }
+                    }
+                    if (imported.isNotEmpty() && StorageRepository.saveVaultFiles(context, updated)) {
+                        true
+                    } else {
+                        imported.forEach { (_, item) ->
+                            File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName).delete()
+                        }
+                        false
+                    }
+                }
+                if (savedOk) {
+                    vaultFiles = updated
+                    val deletedOriginals = withContext(Dispatchers.IO) {
+                        var count = 0
+                        imported.forEach { (uri, _) ->
+                            if (SecurityCrypto.deleteOriginalDocument(context, uri)) count++
+                        }
+                        count
+                    }
+                    val originalsRemain = imported.size - deletedOriginals
+                    val failedImports = uris.size - imported.size
+                    val message = buildString {
+                        append("${imported.size}/${uris.size} file(s) encrypted into the vault.")
+                        if (originalsRemain > 0) {
+                            append(" ${originalsRemain} original file(s) could not be deleted and remain in their original location.")
+                        } else if (imported.isNotEmpty()) {
+                            append(" The selected originals were removed from their source location.")
+                        }
+                        if (failedImports > 0) {
+                            append(" ${failedImports} selected file(s) could not be encrypted; their originals were kept.")
+                        }
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "Could not encrypt files. Originals were kept.", Toast.LENGTH_LONG).show()
+                }
+                isBusy = false
+            }
+        }
+    }
+
+    // استرجاع الملفات (Unhide / Restore) إلى التخزين الخارجي
+    val safRestoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri: Uri? ->
+        onPickerStateChange(false)
+        if (treeUri != null) {
+            val grantFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            val persisted = try {
+                context.contentResolver.takePersistableUriPermission(treeUri, grantFlags)
+                true
+            } catch (_: SecurityException) {
+                false
+            }
+            if (persisted) {
+                val previousUri = restoreLocationPrefs.getString("last_restore_tree_uri", null)
+                if (!previousUri.isNullOrBlank() && previousUri != treeUri.toString()) {
+                    try {
+                        context.contentResolver.releasePersistableUriPermission(Uri.parse(previousUri), grantFlags)
+                    } catch (_: Exception) {}
+                }
+                restoreLocationPrefs.edit().putString("last_restore_tree_uri", treeUri.toString()).apply()
+            }
+        }
+        val itemsToRestore = pendingRestoreItems
+        pendingRestoreItems = emptyList()
+        if (treeUri != null && itemsToRestore.isNotEmpty()) {
+            isBusy = true
+            busyMessage = "Restoring ${itemsToRestore.size} file(s)..."
+            scope.launch {
+                val docDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
+                val updated = vaultFiles.toMutableList()
+                var restoredCount = 0
+                val encryptedFilesToDelete = mutableListOf<File>()
+
+                val savedOk = withContext(Dispatchers.IO) {
+                    itemsToRestore.forEach { item ->
+                        val encFile = File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName)
+                        if (encFile.exists()) {
+                            var createdDocument: androidx.documentfile.provider.DocumentFile? = null
+                            try {
+                                createdDocument = docDir?.createFile(item.mimeType, item.originalName)
+                                    ?: throw IllegalStateException("Unable to create destination file")
+                                val output = context.contentResolver.openOutputStream(createdDocument.uri)
+                                    ?: throw IllegalStateException("Unable to open destination")
+                                output.use { stream ->
+                                    SecurityCrypto.decryptFileToOutputStream(context, item, stream)
+                                }
+                                updated.removeAll { it.id == item.id }
+                                encryptedFilesToDelete.add(encFile)
+                                restoredCount++
+                            } catch (_: Exception) {
+                                createdDocument?.delete()
+                            }
+                        }
+                    }
+                    StorageRepository.saveVaultFiles(context, updated).also { ok ->
+                        if (ok) encryptedFilesToDelete.forEach { it.delete() }
+                    }
+                }
+
+                if (savedOk) {
+                    vaultFiles = updated
+                    Toast.makeText(context, "$restoredCount file(s) restored to your device ✅", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Restore completed, but vault cleanup failed.", Toast.LENGTH_LONG).show()
+                }
+                selectedIds.clear()
+                isBusy = false
+            }
+        }
+    }
+
+    fun launchRestorePicker() {
+        val savedUri = restoreLocationPrefs.getString("last_restore_tree_uri", null)
+        val initialUri = savedUri?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        safRestoreLauncher.launch(initialUri)
+    }
+
+    editingSecretNote?.let { secretNote ->
+        NoteEditorScreen(
+            note = secretNote,
+            onSave = { saved ->
+                val list = secretNotes.toMutableList()
+                val idx = list.indexOfFirst { it.id == saved.id }
+                val finalNote = saved.copy(isSecret = true)
+                if (idx >= 0) list[idx] = finalNote else list.add(0, finalNote)
+                if (StorageRepository.saveSecretNotes(context, list)) {
+                    secretNotes = list
+                } else {
+                    Toast.makeText(context, "Could not save private note.", Toast.LENGTH_LONG).show()
+                    throw IllegalStateException("Private note save failed")
+                }
+            },
+            onBack = { editingSecretNote = null },
+            onScheduleReminder = { _, _ -> },
+            allowReminders = false
+        )
+        return
+    }
+
+    activePdfItem?.let { pdfItem ->
+        InAppPdfViewer(item = pdfItem, onClose = {
+            SecurityCrypto.clearDecryptedTempCache(context)
+            activePdfItem = null
+        })
+        return
+    }
+
+    val currentMediaType = when (currentTab) {
+        0 -> VaultMediaType.PHOTO
+        1 -> VaultMediaType.VIDEO
+        else -> VaultMediaType.DOCUMENT
+    }
+
+    // Keep swipe navigation inside the currently selected media type and folder.
+    // The trash viewer intentionally contains both photos and videos.
+    val allVaultMediaList = remember(vaultFiles, currentTab, currentSubFolder, searchQuery, sortOption) {
+        val base = if (currentTab == 4) {
+            vaultFiles.filter {
+                it.isTrashed &&
+                    (it.mediaType == VaultMediaType.PHOTO || it.mediaType == VaultMediaType.VIDEO)
+            }
+        } else {
+            vaultFiles.filter {
+                !it.isTrashed &&
+                    it.mediaType == currentMediaType &&
+                    it.subFolder == currentSubFolder
+            }
+        }
+        val searched = if (searchQuery.isBlank()) base else base.filter { it.originalName.contains(searchQuery, ignoreCase = true) }
+        when (sortOption) {
+            SortOption.DATE_DESC -> searched.sortedByDescending { it.addedAt }
+            SortOption.NAME_ASC -> searched.sortedBy { it.originalName.lowercase(Locale.ROOT) }
+            SortOption.SIZE_DESC -> searched.sortedByDescending { it.sizeBytes }
+        }
+    }
+
+    val filteredFiles = remember(vaultFiles, currentTab, currentSubFolder, searchQuery, sortOption) {
+        val base = if (currentTab == 4) vaultFiles.filter { it.isTrashed }
+        else vaultFiles.filter { !it.isTrashed && it.mediaType == currentMediaType && it.subFolder == currentSubFolder }
+        val searched = if (searchQuery.isBlank()) base else base.filter { it.originalName.contains(searchQuery, ignoreCase = true) }
+        when (sortOption) {
+            SortOption.DATE_DESC -> searched.sortedByDescending { it.addedAt }
+            SortOption.NAME_ASC -> searched.sortedBy { it.originalName.lowercase(Locale.ROOT) }
+            SortOption.SIZE_DESC -> searched.sortedByDescending { it.sizeBytes }
+        }
+    }
+
+    activeViewerIndex?.let { startIndex ->
+        if (allVaultMediaList.isNotEmpty()) {
+            InAppMediaPagerViewer(
+                items = allVaultMediaList,
+                initialIndex = startIndex.coerceIn(0, allVaultMediaList.lastIndex),
+                onClose = {
+                    SecurityCrypto.clearDecryptedTempCache(context)
+                    activeViewerIndex = null
+                }
+            )
+            return
+        } else {
+            activeViewerIndex = null
+        }
+    }
+
+    val subFolders = remember(vaultFiles, currentMediaType, savedSubFolders) {
+        val set = linkedSetOf(savedSubFolders.firstOrNull() ?: "General")
+        set.addAll(savedSubFolders)
+        vaultFiles.filter { !it.isTrashed && it.mediaType == currentMediaType }.forEach { set.add(it.subFolder) }
+        set.toList()
+    }
+
+    Scaffold(
+        containerColor = Color(0xFF0D0D0D),
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1A1A1A)),
+                title = {
+                    val headerTitle = when {
+                        selectedIds.isNotEmpty() -> "${selectedIds.size} selected"
+                        currentTab == 4 -> "Vault Trash (30d)"
+                        currentTab == 3 && showSecretTrash -> "Hidden Notes Trash"
+                        else -> "Private Vault 🔒"
+                    }
+                    Text(headerTitle, color = Color(0xFF69F0AE), fontWeight = FontWeight.Bold, maxLines = 1)
+                },
+                actions = {
+                    if (selectedIds.isNotEmpty()) {
+                        if (currentTab == 4) {
+                            IconButton(onClick = {
+                                val updated = vaultFiles.map {
+                                    if (it.id in selectedIds) it.copy(isTrashed = false, trashedAt = null) else it
+                                }.toMutableList()
+                                if (StorageRepository.saveVaultFiles(context, updated)) {
+                                    vaultFiles = updated
+                                    selectedIds.clear()
+                                    Toast.makeText(context, "Restored to vault ✅", Toast.LENGTH_SHORT).show()
+                                }
+                            }) {
+                                Icon(Icons.Default.Restore, contentDescription = "Restore to vault", tint = Color(0xFF69F0AE))
+                            }
+                        } else {
+                            IconButton(onClick = { showMoveFolderDialog = true }) {
+                                Icon(Icons.Default.DriveFileMove, contentDescription = "Move to folder", tint = Color(0xFFFFD54F))
+                            }
+                        }
+                        IconButton(onClick = {
+                            pendingRestoreItems = vaultFiles.filter { it.id in selectedIds }
+                            onPickerStateChange(true)
+                            launchRestorePicker()
+                        }) {
+                            Icon(Icons.Default.Unarchive, contentDescription = "Restore to device", tint = Color(0xFF40C4FF))
+                        }
+                        IconButton(onClick = {
+                            val selectedItems = vaultFiles.filter { it.id in selectedIds }
+                            val updated = if (currentTab == 4) vaultFiles.filterNot { it.id in selectedIds }
+                            else vaultFiles.map {
+                                if (it.id in selectedIds) it.copy(isTrashed = true, trashedAt = System.currentTimeMillis()) else it
+                            }
+                            if (StorageRepository.saveVaultFiles(context, updated)) {
+                                if (currentTab == 4) {
+                                    selectedItems.forEach {
+                                        File(StorageRepository.getVaultBlobDir(context), it.encryptedFileName).delete()
+                                    }
+                                }
+                                vaultFiles = updated.toMutableList()
+                                selectedIds.clear()
+                            } else {
+                                Toast.makeText(context, "Could not update vault.", Toast.LENGTH_LONG).show()
+                            }
+                        }) {
+                            Icon(
+                                if (currentTab == 4) Icons.Default.DeleteForever else Icons.Default.Delete,
+                                contentDescription = if (currentTab == 4) "Delete permanently" else "Move to trash",
+                                tint = Color(0xFFFF5252)
+                            )
+                        }
+                        IconButton(onClick = { selectedIds.clear() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear selection", tint = Color.White)
+                        }
+                    } else {
+                        if (currentTab in 0..2 || currentTab == 4) {
+                            IconButton(onClick = {
+                                isGridView = !isGridView
+                                vaultViewPrefs.edit().putBoolean("grid_view", isGridView).apply()
+                            }) {
+                                Icon(
+                                    if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
+                                    contentDescription = if (isGridView) "List view" else "Grid view",
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                        if (currentTab == 4 || (currentTab == 3 && showSecretTrash)) {
+                            IconButton(onClick = { showEmptyTrashDialog = true }) {
+                                Icon(Icons.Default.DeleteForever, contentDescription = "Empty trash", tint = Color(0xFFFF5252))
+                            }
+                        }
+                        if (currentTab == 3) {
+                            IconButton(onClick = { showSecretTrash = !showSecretTrash }) {
+                                Icon(
+                                    Icons.Default.DeleteSweep,
+                                    contentDescription = "Private notes trash",
+                                    tint = if (showSecretTrash) Color(0xFFFF5252) else Color.White
+                                )
+                            }
+                        }
+                        IconButton(onClick = {
+                            sortOption = when (sortOption) {
+                                SortOption.DATE_DESC -> SortOption.NAME_ASC
+                                SortOption.NAME_ASC -> SortOption.SIZE_DESC
+                                SortOption.SIZE_DESC -> SortOption.DATE_DESC
+                            }
+                            val label = when (sortOption) {
+                                SortOption.DATE_DESC -> "Date Added"
+                                SortOption.NAME_ASC -> "Name"
+                                SortOption.SIZE_DESC -> "Size"
+                            }
+                            Toast.makeText(context, "Sorted by: $label", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Default.Sort, contentDescription = "Sort", tint = Color.White)
+                        }
+                        if (currentTab != 3) {
+                            IconButton(onClick = { currentTab = if (currentTab == 4) 0 else 4 }) {
+                                Icon(
+                                    Icons.Default.AutoDelete,
+                                    contentDescription = "Vault trash",
+                                    tint = if (currentTab == 4) Color(0xFFFF5252) else Color.Gray
+                                )
+                            }
+                        }
+                        IconButton(onClick = {
+                            SecurityCrypto.lockVaultSession(context)
+                            onExitVault()
+                        }) {
+                            Icon(Icons.Default.Lock, contentDescription = "Lock vault", tint = Color(0xFFFF5252))
+                        }
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            NavigationBar(containerColor = Color(0xFF1A1A1A)) {
+                NavigationBarItem(selected = currentTab == 0, onClick = { currentTab = 0 }, icon = { Icon(Icons.Default.PhotoLibrary, null) }, label = { Text("Photos") })
+                NavigationBarItem(selected = currentTab == 1, onClick = { currentTab = 1 }, icon = { Icon(Icons.Default.VideoLibrary, null) }, label = { Text("Videos") })
+                NavigationBarItem(selected = currentTab == 2, onClick = { currentTab = 2 }, icon = { Icon(Icons.Default.FolderShared, null) }, label = { Text("Documents") })
+                NavigationBarItem(selected = currentTab == 3, onClick = { currentTab = 3 }, icon = { Icon(Icons.Default.EnhancedEncryption, null) }, label = { Text("Hidden Notes") })
+            }
+        },
+        floatingActionButton = {
+            if (currentTab in 0..3 && !(currentTab == 3 && showSecretTrash)) {
+                FloatingActionButton(
+                    containerColor = Color(0xFF69F0AE),
+                    contentColor = Color.Black,
+                    onClick = {
+                        when (currentTab) {
+                            0 -> { onPickerStateChange(true); safImportLauncher.launch(arrayOf("image/*")) }
+                            1 -> { onPickerStateChange(true); safImportLauncher.launch(arrayOf("video/*")) }
+                            2 -> { onPickerStateChange(true); safImportLauncher.launch(arrayOf("application/pdf", "text/plain")) }
+                            3 -> editingSecretNote = NoteItem(isSecret = true)
+                        }
+                    }
+                ) { Icon(Icons.Default.Add, contentDescription = "Add to vault") }
+            }
+        }
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Search inside vault...", color = Color.Gray) },
+                    leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.Gray) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.Gray)
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF69F0AE),
+                        unfocusedBorderColor = Color(0xFF2C2C2C),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    )
+                )
+                Spacer(Modifier.height(10.dp))
+
+                if (StorageRepository.hasVaultStorageReadError()) {
+                    Text(
+                        "Storage could not be read safely. Changes are disabled to protect existing encrypted data.",
+                        color = Color(0xFFFF8A80),
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        fontSize = 13.sp
+                    )
+                }
+
+                // شريط الألبومات والمجلدات الفرعية مع عرض غلاف الألبوم الحقيقي
+                if (currentTab in 0..2) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        items(subFolders, key = { it }) { folder ->
+                            val isSelected = folder == currentSubFolder
+                            val coverItem = if (currentTab == 0) {
+                                vaultFiles.firstOrNull { !it.isTrashed && it.mediaType == VaultMediaType.PHOTO && it.subFolder == folder && it.isAlbumCover }
+                                    ?: vaultFiles.firstOrNull { !it.isTrashed && it.mediaType == VaultMediaType.PHOTO && it.subFolder == folder }
+                            } else null
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        currentSubFolder = folder
+                                        selectedIds.clear()
+                                    },
+                                    label = { Text(folder) },
+                                    leadingIcon = {
+                                        if (coverItem != null) {
+                                            VaultFolderCoverIcon(item = coverItem)
+                                        } else {
+                                            Icon(Icons.Default.Folder, null, tint = if (isSelected) Color(0xFF69F0AE) else Color.Gray)
+                                        }
+                                    }
+                                )
+                                if (isSelected) {
+                                    IconButton(
+                                        modifier = Modifier.size(36.dp),
+                                        onClick = {
+                                            folderBeingRenamed = folder
+                                            showRenameFolderDialog = true
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Rename folder", tint = Color(0xFF69F0AE), modifier = Modifier.size(18.dp))
+                                    }
+                                    if (folder != (savedSubFolders.firstOrNull() ?: "General")) {
+                                        IconButton(
+                                            modifier = Modifier.size(36.dp),
+                                            onClick = {
+                                                val hasFiles = vaultFiles.any { !it.isTrashed && it.mediaType == currentMediaType && it.subFolder == folder }
+                                                if (hasFiles) {
+                                                    Toast.makeText(context, "Move or delete files in '$folder' first.", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    val updatedFolders = savedSubFolders.filterNot { it.equals(folder, ignoreCase = true) }
+                                                    if (StorageRepository.saveVaultFolders(context, currentMediaType, updatedFolders)) {
+                                                        savedSubFolders = updatedFolders.toMutableList()
+                                                        currentSubFolder = savedSubFolders.firstOrNull() ?: "General"
+                                                    }
+                                                }
+                                            }
+                                        ) {
+                                            Icon(Icons.Default.Close, contentDescription = "Delete folder", tint = Color(0xFFFF8A80), modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        item {
+                            IconButton(onClick = { showNewFolderDialog = true }) {
+                                Icon(Icons.Default.CreateNewFolder, "New album / subfolder", tint = Color(0xFF69F0AE))
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                // قسم النوتس السرية المشفرة (Hidden Notes)
+                if (currentTab == 3) {
+                    val displayedSecretNotes = remember(secretNotes, showSecretTrash, searchQuery, sortOption) {
+                        val filtered = secretNotes.filter {
+                            it.isTrashed == showSecretTrash &&
+                                (searchQuery.isBlank() || it.title.contains(searchQuery, true) || it.plainTextPreview.contains(searchQuery, true))
+                        }
+                        val comparator = when (sortOption) {
+                            SortOption.DATE_DESC -> compareByDescending<NoteItem> { it.isPinned }.thenByDescending { it.updatedAt }
+                            SortOption.NAME_ASC -> compareByDescending<NoteItem> { it.isPinned }.thenBy { it.title.lowercase(Locale.ROOT) }
+                            SortOption.SIZE_DESC -> compareByDescending<NoteItem> { it.isPinned }.thenByDescending { it.htmlContent.length }
+                        }
+                        filtered.sortedWith(comparator)
+                    }
+
+                    if (displayedSecretNotes.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                if (showSecretTrash) "Hidden notes trash is empty" else "No hidden notes yet. Tap + to create one.",
+                                color = Color.Gray
+                            )
+                        }
+                    } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(displayedSecretNotes, key = { it.id }) { note ->
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Column(
+                                            Modifier.weight(1f).combinedClickable(
+                                                onClick = { if (!showSecretTrash) editingSecretNote = note },
+                                                onLongClick = {
+                                                    val updated = secretNotes.map {
+                                                        if (it.id == note.id) {
+                                                            if (showSecretTrash) it.copy(isTrashed = false, trashedAt = null)
+                                                            else it.copy(isTrashed = true, trashedAt = System.currentTimeMillis())
+                                                        } else it
+                                                    }.toMutableList()
+                                                    if (StorageRepository.saveSecretNotes(context, updated)) {
+                                                        secretNotes = updated
+                                                        if (!showSecretTrash) ReminderReceiver.cancelReminder(context, note.id)
+                                                    } else {
+                                                        Toast.makeText(context, "Could not update hidden notes.", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                            )
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    note.title.ifBlank { "Untitled" },
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 16.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                if (note.isPinned && !showSecretTrash) {
+                                                    Icon(Icons.Default.PushPin, "Pinned", tint = Color(0xFFFFD54F), modifier = Modifier.size(18.dp))
+                                                }
+                                            }
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(
+                                                note.plainTextPreview.ifBlank { "Empty note..." },
+                                                color = Color.LightGray,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                fontSize = 14.sp
+                                            )
+                                            Spacer(Modifier.height(6.dp))
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text(dateFormatter.format(Date(note.updatedAt)), color = Color.Gray, fontSize = 12.sp)
+                                                if (showSecretTrash) {
+                                                    val daysLeft = daysRemainingInTrash(note.trashedAt)
+                                                    Text("$daysLeft d left • Hold to restore", color = Color(0xFF69F0AE), fontSize = 12.sp)
+                                                }
+                                            }
+                                        }
+                                        if (showSecretTrash) {
+                                            IconButton(onClick = {
+                                                val updated = secretNotes.filterNot { it.id == note.id }.toMutableList()
+                                                if (StorageRepository.saveSecretNotes(context, updated)) {
+                                                    secretNotes = updated
+                                                    ReminderReceiver.cancelReminder(context, note.id)
+                                                } else {
+                                                    Toast.makeText(context, "Could not delete hidden note.", Toast.LENGTH_LONG).show()
+                                                }
+                                            }) {
+                                                Icon(Icons.Default.DeleteForever, "Delete permanently", tint = Color(0xFFFF5252))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // عرض الصور والفيديوهات والمستندات وسلة المهملات
+                    if (filteredFiles.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                if (currentTab == 4) "Vault trash is empty" else "No encrypted files in '$currentSubFolder' yet.",
+                                color = Color.Gray
+                            )
+                        }
+                    } else {
+                        if (isGridView) {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(2),
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                gridItems(filteredFiles, key = { it.id }) { item ->
+                                    val isSelected = item.id in selectedIds
+                                    Card(
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1C)),
+                                        modifier = Modifier.fillMaxWidth().aspectRatio(1f).combinedClickable(
+                                            onClick = {
+                                                if (selectedIds.isNotEmpty()) {
+                                                    if (isSelected) selectedIds.remove(item.id) else selectedIds.add(item.id)
+                                                } else {
+                                                    when (item.mediaType) {
+                                                        VaultMediaType.PHOTO, VaultMediaType.VIDEO -> {
+                                                            val mediaIndex = allVaultMediaList.indexOfFirst { it.id == item.id }
+                                                            if (mediaIndex >= 0) activeViewerIndex = mediaIndex
+                                                        }
+                                                        VaultMediaType.DOCUMENT -> activePdfItem = item
+                                                    }
+                                                }
+                                            },
+                                            onLongClick = {
+                                                if (isSelected) selectedIds.remove(item.id) else selectedIds.add(item.id)
+                                            }
+                                        )
+                                    ) {
+                                        Box(Modifier.fillMaxSize()) {
+                                            when (item.mediaType) {
+                                                VaultMediaType.PHOTO -> VaultPhotoThumbnail(item = item, modifier = Modifier.fillMaxSize())
+                                                VaultMediaType.VIDEO -> VaultVideoThumbnail(item = item, modifier = Modifier.fillMaxSize(), durationAtTop = true)
+                                                VaultMediaType.DOCUMENT -> VaultDocumentThumbnail(item = item, modifier = Modifier.fillMaxSize())
+                                            }
+                                            if (isSelected) {
+                                                Icon(Icons.Default.CheckCircle, "Selected", tint = Color(0xFF69F0AE),
+                                                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(26.dp))
+                                            }
+                                            Column(
+                                                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                                                    .background(Color.Black.copy(alpha = 0.72f)).padding(horizontal = 8.dp, vertical = 5.dp)
+                                            ) {
+                                                Text(item.originalName, color = Color.White, fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            }
+                                            Row(
+                                                modifier = Modifier.align(Alignment.TopEnd).padding(2.dp),
+                                                horizontalArrangement = Arrangement.End,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                    if (item.mediaType == VaultMediaType.PHOTO && !item.isTrashed) {
+                                                        IconButton(onClick = {
+                                                            val updated = vaultFiles.map {
+                                                                if (it.mediaType == item.mediaType && it.subFolder == item.subFolder && !it.isTrashed)
+                                                                    it.copy(isAlbumCover = (it.id == item.id)) else it
+                                                            }.toMutableList()
+                                                            if (StorageRepository.saveVaultFiles(context, updated)) vaultFiles = updated
+                                                            else Toast.makeText(context, "Could not update vault.", Toast.LENGTH_LONG).show()
+                                                        }, modifier = Modifier.size(30.dp)) {
+                                                            Icon(Icons.Default.Star, "Album cover",
+                                                                tint = if (item.isAlbumCover) Color(0xFFFFD54F) else Color.White,
+                                                                modifier = Modifier.size(18.dp))
+                                                        }
+                                                    }
+                                                    if (item.isTrashed) {
+                                                        IconButton(onClick = {
+                                                            val updated = vaultFiles.map {
+                                                                if (it.id == item.id) it.copy(isTrashed = false, trashedAt = null) else it
+                                                            }.toMutableList()
+                                                            if (StorageRepository.saveVaultFiles(context, updated)) vaultFiles = updated
+                                                            else Toast.makeText(context, "Could not restore file.", Toast.LENGTH_LONG).show()
+                                                        }, modifier = Modifier.size(30.dp)) {
+                                                            Icon(Icons.Default.Restore, "Restore to vault", tint = Color(0xFF40C4FF),
+                                                                modifier = Modifier.size(18.dp))
+                                                        }
+                                                        IconButton(onClick = {
+                                                            val updated = vaultFiles.filterNot { it.id == item.id }
+                                                            if (StorageRepository.saveVaultFiles(context, updated)) {
+                                                                File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName).delete()
+                                                                vaultFiles = updated.toMutableList()
+                                                            } else Toast.makeText(context, "Could not delete file.", Toast.LENGTH_LONG).show()
+                                                        }, modifier = Modifier.size(30.dp)) {
+                                                            Icon(Icons.Default.DeleteForever, "Delete permanently", tint = Color(0xFFFF5252),
+                                                                modifier = Modifier.size(18.dp))
+                                                        }
+                                                    } else {
+                                                        IconButton(onClick = {
+                                                            pendingRestoreItems = listOf(item)
+                                                            onPickerStateChange(true)
+                                                            launchRestorePicker()
+                                                        }, modifier = Modifier.size(30.dp)) {
+                                                            Icon(Icons.Default.Unarchive, "Restore to device", tint = Color(0xFF40C4FF),
+                                                                modifier = Modifier.size(18.dp))
+                                                        }
+                                                    }
+                                                }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(filteredFiles, key = { it.id }) { item ->
+                                val isSelected = item.id in selectedIds
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = if (isSelected) Color(0xFF263238) else Color(0xFF1C1C1C)),
+                                    modifier = Modifier.fillMaxWidth().combinedClickable(
+                                        onClick = {
+                                            if (selectedIds.isNotEmpty()) {
+                                                if (isSelected) selectedIds.remove(item.id) else selectedIds.add(item.id)
+                                            } else {
+                                                when (item.mediaType) {
+                                                    VaultMediaType.PHOTO, VaultMediaType.VIDEO -> {
+                                                        val mediaIndex = allVaultMediaList.indexOfFirst { it.id == item.id }
+                                                        if (mediaIndex >= 0) activeViewerIndex = mediaIndex
+                                                    }
+                                                    VaultMediaType.DOCUMENT -> activePdfItem = item
+                                                }
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (isSelected) selectedIds.remove(item.id) else selectedIds.add(item.id)
+                                        }
+                                    )
+                                ) {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                            val icon = when (item.mediaType) {
+                                                VaultMediaType.PHOTO -> Icons.Default.Image
+                                                VaultMediaType.VIDEO -> Icons.Default.PlayCircleFilled
+                                                VaultMediaType.DOCUMENT -> Icons.Default.PictureAsPdf
+                                            }
+                                            when (item.mediaType) {
+                                                VaultMediaType.PHOTO -> VaultPhotoThumbnail(item = item)
+                                                VaultMediaType.VIDEO -> VaultVideoThumbnail(item = item)
+                                                VaultMediaType.DOCUMENT -> VaultDocumentThumbnail(item = item)
+                                            }
+                                            Spacer(Modifier.width(12.dp))
+                                            Column {
+                                                Text(item.originalName, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                val sizeKb = (item.sizeBytes / 1024L).coerceAtLeast(1L)
+                                                val dateStr = dateFormatter.format(Date(item.addedAt))
+                                                val trashInfo = if (item.isTrashed) " • ${daysRemainingInTrash(item.trashedAt)}d left" else ""
+                                                Text("$sizeKb KB • $dateStr$trashInfo", color = Color.Gray, fontSize = 12.sp)
+                                            }
+                                        }
+                                        Row {
+                                            if (item.mediaType == VaultMediaType.PHOTO && !item.isTrashed) {
+                                                IconButton(onClick = {
+                                                    val updated = vaultFiles.map {
+                                                        if (it.mediaType == item.mediaType && it.subFolder == item.subFolder && !it.isTrashed)
+                                                            it.copy(isAlbumCover = (it.id == item.id)) else it
+                                                    }.toMutableList()
+                                                    if (StorageRepository.saveVaultFiles(context, updated)) {
+                                                        vaultFiles = updated
+                                                        Toast.makeText(context, "Album cover set 🖼️", Toast.LENGTH_SHORT).show()
+                                                    } else Toast.makeText(context, "Could not update album cover.", Toast.LENGTH_LONG).show()
+                                                }) {
+                                                    Icon(Icons.Default.Star, "Album cover", tint = if (item.isAlbumCover) Color(0xFFFFD54F) else Color(0xFFB0B0B0))
+                                                }
+                                            }
+                                            if (item.isTrashed) {
+                                                IconButton(onClick = {
+                                                    val updated = vaultFiles.map {
+                                                        if (it.id == item.id) it.copy(isTrashed = false, trashedAt = null) else it
+                                                    }.toMutableList()
+                                                    if (StorageRepository.saveVaultFiles(context, updated)) vaultFiles = updated
+                                                    else Toast.makeText(context, "Could not restore file.", Toast.LENGTH_LONG).show()
+                                                }) { Icon(Icons.Default.Restore, "Restore to vault", tint = Color(0xFF40C4FF)) }
+                                                IconButton(onClick = {
+                                                    val updated = vaultFiles.filterNot { it.id == item.id }
+                                                    if (StorageRepository.saveVaultFiles(context, updated)) {
+                                                        File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName).delete()
+                                                        vaultFiles = updated.toMutableList()
+                                                        Toast.makeText(context, "File permanently deleted.", Toast.LENGTH_SHORT).show()
+                                                    } else Toast.makeText(context, "Could not delete file.", Toast.LENGTH_LONG).show()
+                                                }) { Icon(Icons.Default.DeleteForever, "Delete permanently", tint = Color(0xFFFF5252)) }
+                                            } else {
+                                                // زر إلغاء الإخفاء واسترجاع الملف للهاتف
+                                                IconButton(onClick = {
+                                                    pendingRestoreItems = listOf(item)
+                                                    onPickerStateChange(true)
+                                                    launchRestorePicker()
+                                                }) { Icon(Icons.Default.Unarchive, "Unhide / Restore to device", tint = Color(0xFF40C4FF)) }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        }
+                    }
+                }
+            }
+
+            if (isBusy) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(Color(0xAA000000)).clickable(
+                        interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {}
+                    ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))) {
+                        Row(
+                            modifier = Modifier.padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(color = Color(0xFF69F0AE), modifier = Modifier.size(28.dp))
+                            Spacer(Modifier.width(16.dp))
+                            Text(busyMessage, color = Color.White, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showRenameFolderDialog) {
+        var renamedFolder by remember(folderBeingRenamed) { mutableStateOf(folderBeingRenamed) }
+        AlertDialog(
+            onDismissRequest = { showRenameFolderDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = { Text("Rename folder", color = Color.White) },
+            text = {
+                OutlinedTextField(
+                    value = renamedFolder,
+                    onValueChange = { renamedFolder = it },
+                    singleLine = true,
+                    placeholder = { Text("New folder name...") }
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val newName = renamedFolder.trim()
+                    val defaultFolder = savedSubFolders.firstOrNull() ?: "General"
+                    if (newName.isBlank() || newName.length > 40 || newName.any { it == '/' || it == '\\' }) {
+                        Toast.makeText(context, "Folder name is invalid (1–40 characters).", Toast.LENGTH_SHORT).show()
+                    } else if (newName.equals(folderBeingRenamed, ignoreCase = true)) {
+                        showRenameFolderDialog = false
+                    } else if (subFolders.any { it.equals(newName, ignoreCase = true) }) {
+                        Toast.makeText(context, "A folder with this name already exists.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val updatedFiles = vaultFiles.map { file ->
+                            if (file.mediaType == currentMediaType && file.subFolder == folderBeingRenamed) file.copy(subFolder = newName) else file
+                        }.toMutableList()
+                        val updatedFolders = savedSubFolders.map { if (it == folderBeingRenamed) newName else it }
+                        val filesSaved = StorageRepository.saveVaultFiles(context, updatedFiles)
+                        if (filesSaved) {
+                            if (StorageRepository.saveVaultFolders(context, currentMediaType, updatedFolders)) {
+                                vaultFiles = updatedFiles
+                                savedSubFolders = updatedFolders.toMutableList()
+                                if (currentSubFolder == folderBeingRenamed) currentSubFolder = newName
+                                Toast.makeText(context, "Folder renamed.", Toast.LENGTH_SHORT).show()
+                                showRenameFolderDialog = false
+                            } else {
+                                StorageRepository.saveVaultFiles(context, vaultFiles)
+                                Toast.makeText(context, "Could not save folder name. Files were kept unchanged.", Toast.LENGTH_LONG).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Could not rename folder safely.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }) { Text("Rename") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameFolderDialog = false }) { Text("Cancel", color = Color.Gray) }
+            }
+        )
+    }
+
+    if (showNewFolderDialog) {
+        var folderName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showNewFolderDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = { Text("Create Subfolder / Album", color = Color.White) },
+            text = {
+                OutlinedTextField(
+                    value = folderName,
+                    onValueChange = { folderName = it },
+                    placeholder = { Text("Folder or album name...") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val name = folderName.trim()
+                    if (name.isNotBlank() && name.length <= 40 && name.none { it == '/' || it == '\\' }) {
+                        val duplicate = subFolders.any { it.equals(name, ignoreCase = true) }
+                        if (duplicate) {
+                            Toast.makeText(context, "A folder with this name already exists.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val updatedFolders = (savedSubFolders + name).distinct()
+                            if (StorageRepository.saveVaultFolders(context, currentMediaType, updatedFolders)) {
+                                savedSubFolders = updatedFolders.toMutableList()
+                                currentSubFolder = name
+                            } else {
+                                Toast.makeText(context, "Could not save folder.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    } else {
+                        Toast.makeText(context, "Folder name is invalid (1–40 characters).", Toast.LENGTH_SHORT).show()
+                    }
+                    showNewFolderDialog = false
+                }) { Text("Create") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewFolderDialog = false }) { Text("Cancel", color = Color.Gray) }
+            }
+        )
+    }
+
+    if (showMoveFolderDialog) {
+        AlertDialog(
+            onDismissRequest = { showMoveFolderDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = { Text("Move ${selectedIds.size} file(s) to folder", color = Color.White) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    subFolders.forEach { targetFolder ->
+                        TextButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                val updated = vaultFiles.map {
+                                    if (it.id in selectedIds) it.copy(subFolder = targetFolder, isAlbumCover = false) else it
+                                }.toMutableList()
+                                if (StorageRepository.saveVaultFiles(context, updated)) {
+                                    vaultFiles = updated
+                                    selectedIds.clear()
+                                    currentSubFolder = targetFolder
+                                    Toast.makeText(context, "Moved to '$targetFolder'", Toast.LENGTH_SHORT).show()
+                                }
+                                showMoveFolderDialog = false
+                            }
+                        ) {
+                            Icon(Icons.Default.Folder, contentDescription = null, tint = Color(0xFF69F0AE))
+                            Spacer(Modifier.width(8.dp))
+                            Text(targetFolder, color = Color.White, modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMoveFolderDialog = false }) { Text("Cancel", color = Color.Gray) }
+            }
+        )
+    }
+
+    if (showEmptyTrashDialog) {
+        AlertDialog(
+            onDismissRequest = { showEmptyTrashDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = { Text("Empty Trash Permanently?", color = Color.White) },
+            text = { Text("All items in this trash view will be permanently erased.", color = Color.LightGray) },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
+                    onClick = {
+                        if (currentTab == 3 && showSecretTrash) {
+                            val trashedNotes = secretNotes.filter { it.isTrashed }
+                            val updated = secretNotes.filterNot { it.isTrashed }.toMutableList()
+                            if (StorageRepository.saveSecretNotes(context, updated)) {
+                                secretNotes = updated
+                            }
+                        } else if (currentTab == 4) {
+                            val trashedFiles = vaultFiles.filter { it.isTrashed }
+                            val updated = vaultFiles.filterNot { it.isTrashed }.toMutableList()
+                            if (StorageRepository.saveVaultFiles(context, updated)) {
+                                trashedFiles.forEach {
+                                    File(StorageRepository.getVaultBlobDir(context), it.encryptedFileName).delete()
+                                }
+                                vaultFiles = updated
+                            }
+                        }
+                        showEmptyTrashDialog = false
+                    }
+                ) { Text("Delete All", color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmptyTrashDialog = false }) { Text("Cancel", color = Color.Gray) }
+            }
+        )
+    }
+}
+
+private fun readTextPrefix(file: File, maxChars: Int): String {
+    if (maxChars <= 0) return ""
+    return file.bufferedReader(Charsets.UTF_8).use { reader ->
+        val buffer = CharArray(8192)
+        buildString {
+            while (length < maxChars) {
+                val count = reader.read(buffer, 0, minOf(buffer.size, maxChars - length))
+                if (count <= 0) break
+                append(buffer, 0, count)
+            }
+        }
+    }
+}
+
+private fun daysRemainingInTrash(trashedAt: Long?): Long {
+    if (trashedAt == null) return 30L
+    val elapsed = System.currentTimeMillis() - trashedAt
+    val remainingMs = (30L * 24 * 60 * 60 * 1000L) - elapsed
+    return TimeUnit.MILLISECONDS.toDays(remainingMs).coerceIn(0L, 30L)
+}
+
+@Composable
+private fun VaultFolderCoverIcon(item: VaultFileItem) {
+    val context = LocalContext.current
+    val bitmap by produceState<Bitmap?>(initialValue = null, key1 = item.id) {
+        value = withContext(Dispatchers.IO) { decodeVaultSampledBitmap(context, item, 96) }
+    }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(22.dp).clip(CircleShape)
+        )
+    } else {
+        Icon(Icons.Default.Album, null, tint = Color(0xFFFFD54F), modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun VaultPhotoThumbnail(item: VaultFileItem, modifier: Modifier = Modifier.size(104.dp)) {
+    val context = LocalContext.current
+    val bitmap by produceState<Bitmap?>(initialValue = null, key1 = item.id) {
+        value = withContext(Dispatchers.IO) { decodeVaultSampledBitmap(context, item, 480) }
+    }
+    if (bitmap != null) {
+        Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = item.originalName,
+            contentScale = ContentScale.Crop, modifier = modifier.clip(RoundedCornerShape(10.dp)))
+    } else {
+        Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF303030)),
+            contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Image, null, tint = Color(0xFF69F0AE), modifier = Modifier.size(38.dp))
+        }
+    }
+}
+
+@Composable
+private fun VaultVideoThumbnail(item: VaultFileItem, modifier: Modifier = Modifier.size(104.dp), durationAtTop: Boolean = false) {
+    val context = LocalContext.current
+    val preview by produceState<Pair<Bitmap?, Long?>>(initialValue = null to null, key1 = item.id) {
+        value = withContext(Dispatchers.IO) { decodeVaultVideoThumbnail(context, item, 480) }
+    }
+    val bitmap = preview.first
+    val duration = preview.second
+    Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF303030))) {
+        if (bitmap != null) {
+            Image(bitmap.asImageBitmap(), contentDescription = item.originalName,
+                contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
+        Icon(Icons.Default.PlayCircleFilled, "Play video", tint = Color.White,
+            modifier = Modifier.align(Alignment.Center).size(32.dp))
+        if (duration != null && duration > 0L) {
+            val totalSeconds = duration / 1000L
+            val hours = totalSeconds / 3600L
+            val minutes = (totalSeconds % 3600L) / 60L
+            val seconds = totalSeconds % 60L
+            val durationText = if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, seconds)
+                else "%02d:%02d".format(minutes, seconds)
+            Text(durationText, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(if (durationAtTop) Alignment.TopStart else Alignment.BottomEnd).padding(4.dp).clip(RoundedCornerShape(4.dp))
+                    .background(Color.Black.copy(alpha = 0.8f)).padding(horizontal = 5.dp, vertical = 2.dp))
+        }
+    }
+}
+
+@Composable
+private fun VaultDocumentThumbnail(item: VaultFileItem, modifier: Modifier = Modifier.size(104.dp)) {
+    val context = LocalContext.current
+    val isTextDocument = item.mimeType.startsWith("text/") || item.originalName.endsWith(".txt", ignoreCase = true)
+    if (isTextDocument) {
+        val snippet by produceState<String?>(initialValue = null, key1 = item.id) {
+            value = withContext(Dispatchers.IO) {
+                var temp: File? = null
+                try {
+                    temp = SecurityCrypto.decryptFileToTempCache(context, item)
+                    temp?.takeIf { it.exists() }?.let { readTextPrefix(it, 220) }
+                } catch (_: Exception) { null } finally { temp?.delete() }
+            }
+        }
+        Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF303030)).padding(7.dp)) {
+            Text(snippet?.ifBlank { "Empty text file" } ?: "Text document", color = Color(0xFFE0E0E0),
+                fontSize = 9.sp, lineHeight = 12.sp, maxLines = 8, overflow = TextOverflow.Ellipsis)
+        }
+    } else {
+        val bitmap by produceState<Bitmap?>(initialValue = null, key1 = item.id) {
+            value = withContext(Dispatchers.IO) { decodeVaultPdfThumbnail(context, item, 480) }
+        }
+        if (bitmap != null) {
+            Image(bitmap!!.asImageBitmap(), contentDescription = "First page of ${item.originalName}",
+                contentScale = ContentScale.Crop, modifier = modifier.clip(RoundedCornerShape(10.dp)))
+        } else {
+            Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF303030)),
+                contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.PictureAsPdf, "PDF document", tint = Color(0xFF69F0AE), modifier = Modifier.size(40.dp))
+            }
+        }
+    }
+}
+private fun decodeVaultVideoThumbnail(context: Context, item: VaultFileItem, targetSize: Int): Pair<Bitmap?, Long?> {
+    var decryptedFile: File? = null
+    val retriever = MediaMetadataRetriever()
+    return try {
+        decryptedFile = SecurityCrypto.decryptFileToTempCache(context, item)
+        if (decryptedFile == null || !decryptedFile.exists()) {
+            null to null
+        } else {
+            retriever.setDataSource(decryptedFile.absolutePath)
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            val frame = retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: return null to duration
+            val largestDimension = maxOf(frame.width, frame.height)
+            val bitmap = if (largestDimension <= targetSize) frame else {
+                val scale = targetSize.toFloat() / largestDimension.toFloat()
+                Bitmap.createScaledBitmap(frame, (frame.width * scale).toInt().coerceAtLeast(1),
+                    (frame.height * scale).toInt().coerceAtLeast(1), true).also { if (it !== frame) frame.recycle() }
+            }
+            bitmap to duration
+        }
+    } catch (_: Exception) {
+        null to null
+    } finally {
+        try { retriever.release() } catch (_: Exception) {}
+        decryptedFile?.delete()
+    }
+}
+
+private fun decodeVaultPdfThumbnail(context: Context, item: VaultFileItem, targetSize: Int): Bitmap? {
+    var decryptedFile: File? = null
+    var descriptor: ParcelFileDescriptor? = null
+    var renderer: PdfRenderer? = null
+    return try {
+        decryptedFile = SecurityCrypto.decryptFileToTempCache(context, item)
+        if (decryptedFile == null || !decryptedFile.exists()) null else {
+            descriptor = ParcelFileDescriptor.open(decryptedFile, ParcelFileDescriptor.MODE_READ_ONLY)
+            renderer = PdfRenderer(descriptor)
+            if (renderer.pageCount <= 0) null else renderer.openPage(0).use { page ->
+                val scale = targetSize.toFloat() / maxOf(page.width, page.height).toFloat()
+                val width = (page.width * scale).toInt().coerceAtLeast(1)
+                val height = (page.height * scale).toInt().coerceAtLeast(1)
+                Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+                    bitmap.eraseColor(android.graphics.Color.WHITE)
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                }
+            }
+        }
+    } catch (_: Exception) {
+        null
+    } finally {
+        try { renderer?.close() } catch (_: Exception) {}
+        try { descriptor?.close() } catch (_: Exception) {}
+        decryptedFile?.delete()
+    }
+}
+
+private fun decodeVaultSampledBitmap(context: Context, item: VaultFileItem, targetSize: Int): Bitmap? {
+    var decryptedFile: File? = null
+    return try {
+        decryptedFile = SecurityCrypto.decryptFileToTempCache(context, item)
+        if (decryptedFile == null || !decryptedFile.exists()) {
+            null
+        } else {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(decryptedFile.absolutePath, bounds)
+            var sample = 1
+            while (bounds.outWidth / sample > targetSize || bounds.outHeight / sample > targetSize) {
+                sample *= 2
+            }
+            BitmapFactory.decodeFile(
+                decryptedFile.absolutePath,
+                BitmapFactory.Options().apply { inSampleSize = sample }
+            )
+        }
+    } catch (_: Exception) {
+        null
+    } finally {
+        decryptedFile?.delete()
+    }
+}
+
+// عارض الوسائط المدمج: يدعم التمرير بين الصور والفيديوهات، والتكبير باللمس، ومشغل فيديو بأزرار التقديم والترجيع وملء الشاشة
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    var isFullscreenLandscape by remember { mutableStateOf(false) }
+    val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { items.size })
+
+    fun exitViewer() {
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        onClose()
+    }
+
+    BackHandler(onBack = { exitViewer() })
+
+    DisposableEffect(Unit) {
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            val item = items[page]
+            val isCurrentPage = pagerState.currentPage == page
+            val decryptedFile by produceState<File?>(initialValue = null, key1 = item.id) {
+                value = withContext(Dispatchers.IO) { SecurityCrypto.decryptFileToTempCache(context, item) }
+            }
+
+            DisposableEffect(item.id, decryptedFile) {
+                onDispose { decryptedFile?.delete() }
+            }
+
+            if (decryptedFile != null) {
+                if (item.mediaType == VaultMediaType.PHOTO) {
+                    var scale by remember(item.id) { mutableFloatStateOf(1f) }
+                    var offsetX by remember(item.id) { mutableFloatStateOf(0f) }
+                    var offsetY by remember(item.id) { mutableFloatStateOf(0f) }
+
+                    LaunchedEffect(isCurrentPage) {
+                        if (!isCurrentPage) {
+                            scale = 1f
+                            offsetX = 0f
+                            offsetY = 0f
+                        }
+                    }
+
+                    val bitmap by produceState<Bitmap?>(initialValue = null, key1 = decryptedFile!!.absolutePath) {
+                        value = withContext(Dispatchers.IO) {
+                            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            BitmapFactory.decodeFile(decryptedFile!!.absolutePath, bounds)
+                            var sample = 1
+                            while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
+                            BitmapFactory.decodeFile(decryptedFile!!.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(item.id) {
+                                detectTapGestures(
+                                    onDoubleTap = {
+                                        if (scale > 1f) {
+                                            scale = 1f
+                                            offsetX = 0f
+                                            offsetY = 0f
+                                        } else {
+                                            scale = 2.5f
+                                        }
+                                    }
+                                )
+                            }
+                            .then(
+                                if (scale > 1.01f) {
+                                    Modifier.pointerInput(item.id) {
+                                        detectTransformGestures { _, pan, zoom, _ ->
+                                            scale = (scale * zoom).coerceIn(1f, 5f)
+                                            if (scale > 1f) {
+                                                offsetX += pan.x
+                                                offsetY += pan.y
+                                            } else {
+                                                offsetX = 0f
+                                                offsetY = 0f
+                                            }
+                                        }
+                                    }
+                                } else Modifier
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap!!.asImageBitmap(),
+                                contentDescription = item.originalName,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize().graphicsLayer(
+                                    scaleX = scale,
+                                    scaleY = scale,
+                                    translationX = offsetX,
+                                    translationY = offsetY
+                                )
+                            )
+                        }
+                    }
+                } else if (item.mediaType == VaultMediaType.VIDEO) {
+                    val exoPlayer = remember(decryptedFile!!.absolutePath) {
+                        ExoPlayer.Builder(context)
+                            .setSeekBackIncrementMs(10_000L)
+                            .setSeekForwardIncrementMs(10_000L)
+                            .build()
+                            .apply {
+                                setMediaItem(MediaItem.fromUri(Uri.fromFile(decryptedFile!!)))
+                                prepare()
+                            }
+                    }
+                    LaunchedEffect(isCurrentPage, exoPlayer) {
+                        if (isCurrentPage) exoPlayer.play() else exoPlayer.pause()
+                    }
+                    DisposableEffect(exoPlayer) {
+                        onDispose { exoPlayer.release() }
+                    }
+                    Box(Modifier.fillMaxSize()) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { ctx ->
+                                PlayerView(ctx).apply {
+                                    player = exoPlayer
+                                    useController = true
+                                    setShowFastForwardButton(true)
+                                    setShowRewindButton(true)
+                                }
+                            }
+                        )
+                        // زر ملء الشاشة وتدوير العرض للفيديو
+                        IconButton(
+                            onClick = {
+                                isFullscreenLandscape = !isFullscreenLandscape
+                                activity?.requestedOrientation = if (isFullscreenLandscape) {
+                                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                } else {
+                                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(16.dp)
+                                .background(Color(0x88000000), RoundedCornerShape(50))
+                        ) {
+                            Icon(
+                                if (isFullscreenLandscape) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                contentDescription = "Toggle Fullscreen",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF69F0AE))
+                }
+            }
+        }
+        IconButton(
+            onClick = { exitViewer() },
+            modifier = Modifier.align(Alignment.TopStart).padding(16.dp).background(Color(0x88000000), RoundedCornerShape(50))
+        ) {
+            Icon(Icons.Default.Close, "Close", tint = Color.White)
+        }
+    }
+}
+
+// قارئ مستندات وملفات PDF مدمج بالكامل داخل الخزنة
+@Composable
+fun InAppPdfViewer(item: VaultFileItem, onClose: () -> Unit) {
+    val context = LocalContext.current
+    BackHandler(onBack = onClose)
+
+    var isDecrypting by remember(item.id) { mutableStateOf(true) }
+    var decryptedFile by remember(item.id) { mutableStateOf<File?>(null) }
+    val renderMutex = remember(item.id) { Mutex() }
+
+    LaunchedEffect(item.id) {
+        isDecrypting = true
+        decryptedFile = withContext(Dispatchers.IO) {
+            SecurityCrypto.decryptFileToTempCache(context, item)
+        }
+        isDecrypting = false
+    }
+
+    DisposableEffect(item.id, decryptedFile) {
+        onDispose { decryptedFile?.delete() }
+    }
+
+    val isTextDocument = item.mimeType.startsWith("text/") || item.originalName.endsWith(".txt", ignoreCase = true)
+    val textContent by produceState<String?>(initialValue = null, key1 = decryptedFile, key2 = isTextDocument) {
+        value = if (isTextDocument && decryptedFile != null) withContext(Dispatchers.IO) {
+            try {
+                readTextPrefix(decryptedFile!!, 2_000_000)
+            } catch (_: Exception) { null }
+        } else null
+    }
+
+    val pageCount by produceState(initialValue = 0, key1 = decryptedFile, key2 = isTextDocument) {
+        value = withContext(Dispatchers.IO) {
+            if (isTextDocument || decryptedFile == null || !decryptedFile!!.exists()) 0 else {
+                try {
+                    ParcelFileDescriptor.open(decryptedFile!!, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                        PdfRenderer(descriptor).use { it.pageCount }
+                    }
+                } catch (_: Exception) { 0 }
+            }
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(Color(0xFF121212))) {
+        Row(
+            Modifier.fillMaxWidth().background(Color(0xFF1E1E1E)).padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(item.originalName, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
+            IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Close", tint = Color.White) }
+        }
+        when {
+            isDecrypting -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color(0xFF69F0AE))
+            }
+            decryptedFile == null -> Text("Unable to decrypt this document.", color = Color.White, modifier = Modifier.padding(16.dp))
+            isTextDocument && textContent != null -> SelectionContainer {
+                Text(
+                    textContent!!,
+                    color = Color.White,
+                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
+                )
+            }
+            isTextDocument -> Text("Unable to read this text document.", color = Color.White, modifier = Modifier.padding(16.dp))
+            pageCount > 0 -> LazyColumn(
+                Modifier.fillMaxSize().padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(pageCount, key = { it }) { pageIndex ->
+                    PdfPageImage(file = decryptedFile!!, pageIndex = pageIndex, renderMutex = renderMutex)
+                }
+            }
+            else -> Text("Unsupported document format. Import PDF or plain text files.", color = Color.White, modifier = Modifier.padding(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun PdfPageImage(file: File, pageIndex: Int, renderMutex: Mutex) {
+    val bitmap by produceState<Bitmap?>(initialValue = null, file, pageIndex) {
+        value = withContext(Dispatchers.IO) {
+            renderMutex.withLock {
+                var descriptor: ParcelFileDescriptor? = null
+                var renderer: PdfRenderer? = null
+                try {
+                    descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                    renderer = PdfRenderer(descriptor)
+                    renderer.openPage(pageIndex).use { page ->
+                        val scale = minOf(2f, 1600f / maxOf(page.width, page.height).toFloat())
+                        val width = (page.width * scale).toInt().coerceAtLeast(1)
+                        val height = (page.height * scale).toInt().coerceAtLeast(1)
+                        Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bmp ->
+                            page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        }
+                    }
+                } catch (_: Exception) {
+                    null
+                } finally {
+                    try { renderer?.close() } catch (_: Exception) {}
+                    try { descriptor?.close() } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = "PDF page ${pageIndex + 1}",
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(Color.White)
+        )
+    } else {
+        Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Color(0xFF69F0AE))
+        }
+    }
+}
