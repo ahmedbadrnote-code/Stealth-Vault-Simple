@@ -178,7 +178,7 @@ fun SecretVaultScreen(
             }
             val targetFolder = currentSubFolder
             isBusy = true
-            busyMessage = "Encrypting & moving ${uris.size} file(s)..."
+            busyMessage = "Moving ${uris.size} file(s) into the vault..."
             scope.launch {
                 val updated = vaultFiles.toMutableList()
                 val imported = mutableListOf<Pair<Uri, VaultFileItem>>()
@@ -211,19 +211,19 @@ fun SecretVaultScreen(
                     val originalsRemain = imported.size - deletedOriginals
                     val failedImports = uris.size - imported.size
                     val message = buildString {
-                        append("${imported.size}/${uris.size} file(s) encrypted into the vault.")
+                        append("${imported.size}/${uris.size} file(s) moved into the vault.")
                         if (originalsRemain > 0) {
                             append(" ${originalsRemain} original file(s) could not be deleted and remain in their original location.")
                         } else if (imported.isNotEmpty()) {
                             append(" The selected originals were removed from their source location.")
                         }
                         if (failedImports > 0) {
-                            append(" ${failedImports} selected file(s) could not be encrypted; their originals were kept.")
+                            append(" ${failedImports} selected file(s) could not be imported; their originals were kept.")
                         }
                     }
                     Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                 } else {
-                    Toast.makeText(context, "Could not encrypt files. Originals were kept.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Could not import files. Originals were kept.", Toast.LENGTH_LONG).show()
                 }
                 isBusy = false
             }
@@ -1251,7 +1251,7 @@ private fun VaultDocumentThumbnail(item: VaultFileItem, modifier: Modifier = Mod
                 try {
                     temp = SecurityCrypto.decryptFileToTempCache(context, item)
                     temp?.takeIf { it.exists() }?.let { readTextPrefix(it, 220) }
-                } catch (_: Exception) { null } finally { temp?.delete() }
+                } catch (_: Exception) { null } finally { SecurityCrypto.deletePreviewIfTemporary(context, temp) }
             }
         }
         Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF303030)).padding(7.dp)) {
@@ -1298,7 +1298,7 @@ private fun decodeVaultVideoThumbnail(context: Context, item: VaultFileItem, tar
         null to null
     } finally {
         try { retriever.release() } catch (_: Exception) {}
-        decryptedFile?.delete()
+        SecurityCrypto.deletePreviewIfTemporary(context, decryptedFile)
     }
 }
 
@@ -1326,7 +1326,7 @@ private fun decodeVaultPdfThumbnail(context: Context, item: VaultFileItem, targe
     } finally {
         try { renderer?.close() } catch (_: Exception) {}
         try { descriptor?.close() } catch (_: Exception) {}
-        decryptedFile?.delete()
+        SecurityCrypto.deletePreviewIfTemporary(context, decryptedFile)
     }
 }
 
@@ -1351,7 +1351,7 @@ private fun decodeVaultSampledBitmap(context: Context, item: VaultFileItem, targ
     } catch (_: Exception) {
         null
     } finally {
-        decryptedFile?.delete()
+        SecurityCrypto.deletePreviewIfTemporary(context, decryptedFile)
     }
 }
 
@@ -1392,7 +1392,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                 // Capture the file for this effect instance. Reading the delegated state
                 // from onDispose can resolve to a newer preview and delete it prematurely.
                 val fileToDelete = decryptedFile
-                onDispose { fileToDelete?.delete() }
+                onDispose { SecurityCrypto.deletePreviewIfTemporary(context, fileToDelete) }
             }
 
             if (decryptedFile != null) {
@@ -1555,7 +1555,7 @@ fun InAppPdfViewer(item: VaultFileItem, onClose: () -> Unit) {
     DisposableEffect(item.id, decryptedFile) {
         // Capture the file for this effect instance so disposal cannot delete a newer preview.
         val fileToDelete = decryptedFile
-        onDispose { fileToDelete?.delete() }
+        onDispose { SecurityCrypto.deletePreviewIfTemporary(context, fileToDelete) }
     }
 
     val isTextDocument = item.mimeType.startsWith("text/") || item.originalName.endsWith(".txt", ignoreCase = true)
