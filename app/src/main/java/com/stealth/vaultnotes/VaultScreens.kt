@@ -24,9 +24,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -50,8 +47,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -1398,18 +1393,6 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
 
             if (decryptedFile != null) {
                 if (item.mediaType == VaultMediaType.PHOTO) {
-                    var scale by remember(item.id) { mutableFloatStateOf(1f) }
-                    var offsetX by remember(item.id) { mutableFloatStateOf(0f) }
-                    var offsetY by remember(item.id) { mutableFloatStateOf(0f) }
-
-                    LaunchedEffect(isCurrentPage) {
-                        if (!isCurrentPage) {
-                            scale = 1f
-                            offsetX = 0f
-                            offsetY = 0f
-                        }
-                    }
-
                     val bitmap by produceState<Bitmap?>(initialValue = null, key1 = decryptedFile!!.absolutePath) {
                         value = withContext(Dispatchers.IO) {
                             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -1421,58 +1404,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                     }
 
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .pointerInput(item.id) {
-                                detectTapGestures(
-                                    onDoubleTap = {
-                                        if (scale > 1f) {
-                                            scale = 1f
-                                            offsetX = 0f
-                                            offsetY = 0f
-                                        } else {
-                                            scale = 2.5f
-                                        }
-                                    }
-                                )
-                            }
-                            .pointerInput(item.id) {
-                                awaitEachGesture {
-                                    awaitFirstDown(requireUnconsumed = false)
-                                    do {
-                                        val event = awaitPointerEvent()
-                                        val pressed = event.changes.filter { it.pressed }
-                                        if (pressed.size >= 2 || scale > 1.01f) {
-                                            val previousCentroidX = pressed.map { it.previousPosition.x }.average().toFloat()
-                                            val previousCentroidY = pressed.map { it.previousPosition.y }.average().toFloat()
-                                            val currentCentroidX = pressed.map { it.position.x }.average().toFloat()
-                                            val currentCentroidY = pressed.map { it.position.y }.average().toFloat()
-                                            val previousRadius = pressed.map {
-                                                val dx = it.previousPosition.x - previousCentroidX
-                                                val dy = it.previousPosition.y - previousCentroidY
-                                                kotlin.math.sqrt(dx * dx + dy * dy)
-                                            }.average().toFloat()
-                                            val currentRadius = pressed.map {
-                                                val dx = it.position.x - currentCentroidX
-                                                val dy = it.position.y - currentCentroidY
-                                                kotlin.math.sqrt(dx * dx + dy * dy)
-                                            }.average().toFloat()
-
-                                            if (pressed.size >= 2 && previousRadius > 0f) {
-                                                scale = (scale * (currentRadius / previousRadius)).coerceIn(1f, 5f)
-                                            }
-                                            if (scale > 1f) {
-                                                offsetX += currentCentroidX - previousCentroidX
-                                                offsetY += currentCentroidY - previousCentroidY
-                                            } else {
-                                                offsetX = 0f
-                                                offsetY = 0f
-                                            }
-                                            pressed.forEach { it.consume() }
-                                        }
-                                    } while (event.changes.any { it.pressed })
-                                }
-                            },
+                        modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         if (bitmap != null) {
@@ -1480,12 +1412,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                                 bitmap = bitmap!!.asImageBitmap(),
                                 contentDescription = item.originalName,
                                 contentScale = ContentScale.Fit,
-                                modifier = Modifier.fillMaxSize().graphicsLayer(
-                                    scaleX = scale,
-                                    scaleY = scale,
-                                    translationX = offsetX,
-                                    translationY = offsetY
-                                )
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
                     }
