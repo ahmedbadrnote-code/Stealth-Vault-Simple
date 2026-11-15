@@ -238,7 +238,7 @@ fun StealthNotesApp(
             scope.launch {
                 val importedOk = withContext(Dispatchers.IO) {
                     try {
-                        val json = context.contentResolver.openInputStream(it)?.bufferedReader()?.readText() ?: ""
+                        val json = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { reader -> reader.readText() } ?: ""
                         StorageRepository.importPublicNotesJson(context, json)
                     } catch (_: Exception) {
                         false
