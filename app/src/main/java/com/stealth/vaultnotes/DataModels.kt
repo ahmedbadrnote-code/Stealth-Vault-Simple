@@ -167,10 +167,15 @@ object StorageRepository {
             val expired = list.filter { it.isTrashed && it.trashedAt != null && (now - it.trashedAt!!) > THIRTY_DAYS_MS }
             val active = list.filterNot { it in expired }.toMutableList()
             if (expired.isNotEmpty() || migrated) {
-                expired.forEach { ReminderReceiver.cancelReminder(context, it.id) }
-                savePublicNotes(context, active)
+                if (savePublicNotes(context, active)) {
+                    expired.forEach { ReminderReceiver.cancelReminder(context, it.id) }
+                    active
+                } else {
+                    list
+                }
+            } else {
+                list
             }
-            active
         } catch (_: Exception) {
             publicNotesUnreadable = true
             mutableListOf()
@@ -246,9 +251,10 @@ object StorageRepository {
             val expired = list.filter { it.isTrashed && it.trashedAt != null && (now - it.trashedAt!!) > THIRTY_DAYS_MS }
             val active = list.filterNot { it in expired }.toMutableList()
             if (expired.isNotEmpty() || migrated) {
-                saveSecretNotes(context, active)
+                if (saveSecretNotes(context, active)) active else list
+            } else {
+                list
             }
-            active
         } catch (_: Exception) {
             secretNotesUnreadable = true
             mutableListOf()
@@ -322,9 +328,13 @@ object StorageRepository {
             if (expired.isNotEmpty() || needsResave) {
                 if (saveVaultFiles(context, active)) {
                     expired.forEach { File(blobDir, it.encryptedFileName).delete() }
+                    active
+                } else {
+                    existingBlobs
                 }
+            } else {
+                existingBlobs
             }
-            active
         } catch (_: Exception) {
             vaultIndexUnreadable = true
             mutableListOf()
