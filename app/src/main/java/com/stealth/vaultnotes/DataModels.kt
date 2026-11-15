@@ -55,6 +55,8 @@ data class VaultFileItem(
     var subFolder: String = "General",
     var isAlbumCover: Boolean = false,
     var originalParentTreeUri: String? = null,
+    // null/true means legacy encrypted storage; false means a new plaintext app-private blob.
+    var isEncrypted: Boolean? = null,
     var isTrashed: Boolean = false,
     var trashedAt: Long? = null
 )
@@ -280,26 +282,24 @@ object StorageRepository {
             check(blobDir.exists() && blobDir.isDirectory && blobDir.canRead()) {
                 "Vault blob directory is not readable"
             }
-            val blobNames = blobDir.list()?.toSet()
-                ?: throw IllegalStateException("Unable to list vault blob directory")
             val decryptedBytes = SecurityCrypto.decryptBytes(context, file.readBytes())
             val json = String(decryptedBytes, Charsets.UTF_8)
             val type = object : TypeToken<MutableList<VaultFileItem>>() {}.type
             val list: MutableList<VaultFileItem> = gson.fromJson(json, type)
                 ?: throw IllegalStateException("Vault index is empty or invalid")
 
+            // Keep every valid index record even if its blob is temporarily missing.
+            // Silently dropping records here could permanently lose the user's metadata.
+            list.forEach { item ->
+                val name = item.encryptedFileName
+                require(name.isNotBlank() && !name.contains('/') && !name.contains('\\')) {
+                    "Vault index contains an unsafe blob filename"
+                }
+            }
+
             vaultIndexUnreadable = false
             var needsResave = false
-
-            // تنظيف السجلات التي فقدت ملفها المشفر بدلاً من تعطيل الخزنة للأبد
-            val existingBlobs = list.filter { item ->
-                val name = item.encryptedFileName
-                name.isNotBlank() && !name.contains('/') && !name.contains('\\') &&
-                    name in blobNames && File(blobDir, name).isFile
-            }.toMutableList()
-            if (existingBlobs.size != list.size) {
-                needsResave = true
-            }
+            val existingBlobs = list.toMutableList()
 
             existingBlobs.forEach {
                 if (it.subFolder == "العام" || it.subFolder.isBlank()) {
