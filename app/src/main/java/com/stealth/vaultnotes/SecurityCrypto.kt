@@ -305,7 +305,8 @@ object SecurityCrypto {
             val target = File(dir, filename)
             val temp = File(dir, "$filename.tmp")
             try {
-                val input = resolver.openInputStream(uri) ?: return null
+                val input = resolver.openInputStream(uri)
+                    ?: throw IllegalStateException("Unable to open selected file")
                 val streamedSize = input.use { copyStreamToFile(it, temp) }
                 check(temp.isFile) { "Imported file was not written" }
                 check(temp.renameTo(target)) { "Unable to finalize vault file" }
