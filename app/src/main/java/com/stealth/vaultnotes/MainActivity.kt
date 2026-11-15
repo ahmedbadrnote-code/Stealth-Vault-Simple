@@ -485,14 +485,25 @@ fun StealthNotesApp(
                         val candidate = searchQuery.trim()
                         if (candidate.isNotEmpty()) {
                             scope.launch {
-                                val unlocked = withContext(Dispatchers.IO) {
-                                    SecurityCrypto.verifyPasscode(context, candidate)
+                                val verification = withContext(Dispatchers.IO) {
+                                    try {
+                                        SecurityCrypto.verifyPasscode(context, candidate) to null
+                                    } catch (e: Exception) {
+                                        false to e
+                                    }
                                 }
-                                if (unlocked) {
+                                if (verification.first) {
                                     searchQuery = ""
                                     focusManager.clearFocus()
                                     onVaultStateChange(true)
                                 } else {
+                                    if (verification.second != null) {
+                                        Toast.makeText(
+                                            context,
+                                            "Unable to unlock the vault. Existing encrypted data has been preserved.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
                                     focusManager.clearFocus()
                                 }
                             }
