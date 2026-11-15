@@ -1327,14 +1327,49 @@ private fun decodeVaultVideoThumbnail(context: Context, item: VaultFileItem, tar
         } else {
             retriever.setDataSource(decryptedFile.absolutePath)
             val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
-            val frame = retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+
+            // Ask the decoder for a thumbnail-sized frame on Android 8.1+ instead
+            // of allocating a full-resolution 4K/8K bitmap and scaling it afterward.
+            val rawWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+            val rawHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+            val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            val videoWidth = if (rotation % 180 != 0) rawHeight else rawWidth
+            val videoHeight = if (rotation % 180 != 0) rawWidth else rawHeight
+
+            fun extractFrame(timeUs: Long): Bitmap? {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 &&
+                    videoWidth != null && videoHeight != null &&
+                    videoWidth > 0 && videoHeight > 0
+                ) {
+                    val scale = minOf(1f, targetSize.toFloat() / maxOf(videoWidth, videoHeight).toFloat())
+                    val width = (videoWidth * scale).toInt().coerceAtLeast(1)
+                    val height = (videoHeight * scale).toInt().coerceAtLeast(1)
+                    val scaled = runCatching {
+                        retriever.getScaledFrameAtTime(
+                            timeUs,
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                            width,
+                            height
+                        )
+                    }.getOrNull()
+                    if (scaled != null) return scaled
+                }
+                // Android 8.0 and unusual files without dimensions use the compatible path.
+                return retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            }
+
+            val frame = extractFrame(1_000_000L)
+                ?: extractFrame(0L)
                 ?: return null to duration
             val largestDimension = maxOf(frame.width, frame.height)
             val bitmap = if (largestDimension <= targetSize) frame else {
                 val scale = targetSize.toFloat() / largestDimension.toFloat()
-                Bitmap.createScaledBitmap(frame, (frame.width * scale).toInt().coerceAtLeast(1),
-                    (frame.height * scale).toInt().coerceAtLeast(1), true).also { if (it !== frame) frame.recycle() }
+                Bitmap.createScaledBitmap(
+                    frame,
+                    (frame.width * scale).toInt().coerceAtLeast(1),
+                    (frame.height * scale).toInt().coerceAtLeast(1),
+                    true
+                ).also { if (it !== frame) frame.recycle() }
             }
             bitmap to duration
         }
@@ -1345,7 +1380,6 @@ private fun decodeVaultVideoThumbnail(context: Context, item: VaultFileItem, tar
         SecurityCrypto.deletePreviewIfTemporary(context, decryptedFile)
     }
 }
-
 private fun decodeVaultPdfThumbnail(context: Context, item: VaultFileItem, targetSize: Int): Bitmap? {
     var decryptedFile: File? = null
     var descriptor: ParcelFileDescriptor? = null
