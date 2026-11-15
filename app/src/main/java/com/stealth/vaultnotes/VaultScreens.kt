@@ -642,7 +642,7 @@ fun SecretVaultScreen(
                                         IconButton(
                                             modifier = Modifier.size(36.dp),
                                             onClick = {
-                                                val hasFiles = vaultFiles.any { !it.isTrashed && it.mediaType == currentMediaType && it.subFolder == folder }
+                                                val hasFiles = vaultFiles.any { it.mediaType == currentMediaType && it.subFolder == folder }
                                                 if (hasFiles) {
                                                     Toast.makeText(context, "Move or delete files in '$folder' first.", Toast.LENGTH_SHORT).show()
                                                 } else {
@@ -1031,17 +1031,23 @@ fun SecretVaultScreen(
                             if (file.mediaType == currentMediaType && file.subFolder == folderBeingRenamed) file.copy(subFolder = newName) else file
                         }.toMutableList()
                         val updatedFolders = savedSubFolders.map { if (it == folderBeingRenamed) newName else it }
-                        val filesSaved = StorageRepository.saveVaultFiles(context, updatedFiles)
-                        if (filesSaved) {
-                            if (StorageRepository.saveVaultFolders(context, currentMediaType, updatedFolders)) {
+                        val foldersSaved = StorageRepository.saveVaultFolders(context, currentMediaType, updatedFolders)
+                        if (foldersSaved) {
+                            if (StorageRepository.saveVaultFiles(context, updatedFiles)) {
                                 vaultFiles = updatedFiles
                                 savedSubFolders = updatedFolders.toMutableList()
                                 if (currentSubFolder == folderBeingRenamed) currentSubFolder = newName
                                 Toast.makeText(context, "Folder renamed.", Toast.LENGTH_SHORT).show()
                                 showRenameFolderDialog = false
                             } else {
-                                StorageRepository.saveVaultFiles(context, vaultFiles)
-                                Toast.makeText(context, "Could not save folder name. Files were kept unchanged.", Toast.LENGTH_LONG).show()
+                                // Keep the original folder available if the file index could not be updated.
+                                val rollbackOk = StorageRepository.saveVaultFolders(context, currentMediaType, savedSubFolders)
+                                Toast.makeText(
+                                    context,
+                                    if (rollbackOk) "Could not rename folder. Files were kept unchanged."
+                                    else "Folder list could not be fully rolled back. Your files remain in their original folder.",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
                         } else {
                             Toast.makeText(context, "Could not rename folder safely.", Toast.LENGTH_LONG).show()
