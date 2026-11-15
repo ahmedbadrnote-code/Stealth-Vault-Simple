@@ -463,8 +463,13 @@ fun SecretVaultScreen(
                             }
                             if (StorageRepository.saveVaultFiles(context, updated)) {
                                 if (currentTab == 4) {
-                                    selectedItems.forEach {
-                                        File(StorageRepository.getVaultBlobDir(context), it.encryptedFileName).delete()
+                                    var cleanupFailures = 0
+                                    selectedItems.forEach { item ->
+                                        val blob = File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName)
+                                        if (blob.exists() && !blob.delete() && blob.exists()) cleanupFailures++
+                                    }
+                                    if (cleanupFailures > 0) {
+                                        Toast.makeText(context, "$cleanupFailures file(s) were removed from the vault index but could not be physically deleted.", Toast.LENGTH_LONG).show()
                                     }
                                 }
                                 vaultFiles = updated.toMutableList()
@@ -859,8 +864,10 @@ fun SecretVaultScreen(
                                                         IconButton(onClick = {
                                                             val updated = vaultFiles.filterNot { it.id == item.id }
                                                             if (StorageRepository.saveVaultFiles(context, updated)) {
-                                                                File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName).delete()
+                                                                val blob = File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName)
+                                                                val cleanupFailed = blob.exists() && !blob.delete() && blob.exists()
                                                                 vaultFiles = updated.toMutableList()
+                                                                if (cleanupFailed) Toast.makeText(context, "File removed from the vault index, but its stored copy could not be physically deleted.", Toast.LENGTH_LONG).show()
                                                             } else Toast.makeText(context, "Could not delete file.", Toast.LENGTH_LONG).show()
                                                         }, modifier = Modifier.size(30.dp)) {
                                                             Icon(Icons.Default.DeleteForever, "Delete permanently", tint = Color(0xFFFF5252),
@@ -957,9 +964,14 @@ fun SecretVaultScreen(
                                                 IconButton(onClick = {
                                                     val updated = vaultFiles.filterNot { it.id == item.id }
                                                     if (StorageRepository.saveVaultFiles(context, updated)) {
-                                                        File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName).delete()
+                                                        val blob = File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName)
+                                                        val cleanupFailed = blob.exists() && !blob.delete() && blob.exists()
                                                         vaultFiles = updated.toMutableList()
-                                                        Toast.makeText(context, "File permanently deleted.", Toast.LENGTH_SHORT).show()
+                                                        if (cleanupFailed) {
+                                                            Toast.makeText(context, "File removed from the vault index, but its stored copy could not be physically deleted.", Toast.LENGTH_LONG).show()
+                                                        } else {
+                                                            Toast.makeText(context, "File permanently deleted.", Toast.LENGTH_SHORT).show()
+                                                        }
                                                     } else Toast.makeText(context, "Could not delete file.", Toast.LENGTH_LONG).show()
                                                 }) { Icon(Icons.Default.DeleteForever, "Delete permanently", tint = Color(0xFFFF5252)) }
                                             } else {
