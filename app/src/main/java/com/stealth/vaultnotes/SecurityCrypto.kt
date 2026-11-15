@@ -173,21 +173,31 @@ object SecurityCrypto {
             cachedAesKey?.let { return it }
         }
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val master = getOrCreateKeystoreKey()
-        prefs.getString(KEY_AES_WRAPPED, null)?.let {
-            val unwrapped = unwrapDataKey(master, it)
+        prefs.getString(KEY_AES_WRAPPED, null)?.let { wrappedValue ->
+            // Never replace a wrapped key automatically. If the Android Keystore key
+            // is unavailable or the wrapped value is damaged, fail closed so existing
+            // encrypted data is not silently made inaccessible by a new data key.
+            val master = getOrCreateKeystoreKey()
+            val unwrapped = unwrapDataKey(master, wrappedValue)
             synchronized(sessionLock) {
                 check(vaultSessionUnlocked) { "Vault session was locked during key access" }
                 cachedAesKey = unwrapped
             }
             return unwrapped
         }
+
         val legacy = prefs.getString(KEY_AES_RAW, null)
-        val raw = if (legacy != null && legacy.length == 64) {
+        val raw = if (legacy != null) {
+            // A legacy key's presence means it may protect existing user data.
+            // Reject malformed values without generating a replacement or deleting it.
+            require(legacy.matches(Regex("[0-9a-fA-F]{64}"))) {
+                "Legacy vault key is invalid; refusing to replace the existing key"
+            }
             legacy.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         } else {
             ByteArray(32).also { SecureRandom().nextBytes(it) }
         }
+        val master = getOrCreateKeystoreKey()
         val wrapped = wrapDataKey(master, raw)
         check(prefs.edit().putString(KEY_AES_WRAPPED, wrapped).remove(KEY_AES_RAW).commit()) {
             "Unable to migrate vault key safely"
