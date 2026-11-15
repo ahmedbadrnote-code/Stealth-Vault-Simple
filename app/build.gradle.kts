@@ -3,46 +3,21 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val stableDebugKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
-val stableDebugStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-val stableDebugKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
-val stableDebugKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
-val hasStableDebugSigning = listOf(
-    stableDebugKeystorePath,
-    stableDebugStorePassword,
-    stableDebugKeyAlias,
-    stableDebugKeyPassword
-).all { !it.isNullOrBlank() }
-
 android {
     namespace = "com.stealth.vaultnotes"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.stealth.vaultnotes"
+        // Separate application ID so this experimental edition installs beside the original.
+        applicationId = "com.stealth.vaultsimple"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0"
-    }
-
-    signingConfigs {
-        if (hasStableDebugSigning) {
-            create("stableDebug") {
-                storeFile = file(stableDebugKeystorePath!!)
-                storePassword = stableDebugStorePassword
-                keyAlias = stableDebugKeyAlias
-                keyPassword = stableDebugKeyPassword
-            }
-        }
+        versionName = "1.0-simple"
     }
 
     buildTypes {
-        debug {
-            if (hasStableDebugSigning) {
-                signingConfig = signingConfigs.getByName("stableDebug")
-            }
-        }
+        debug
         release {
             isMinifyEnabled = false
             proguardFiles(
