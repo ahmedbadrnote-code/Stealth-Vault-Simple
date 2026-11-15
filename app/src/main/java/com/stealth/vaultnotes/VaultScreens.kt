@@ -70,6 +70,21 @@ import java.util.concurrent.TimeUnit
 
 // عقد مخصص يعتمد حصرياً على Storage Access Framework (Intent.ACTION_OPEN_DOCUMENT)
 // لضمان صلاحية قراءة وحذف الملف الأصلي من المعرض دون استخدام Photo Picker نهائياً
+
+private class CountingOutputStream(output: java.io.OutputStream) : java.io.FilterOutputStream(output) {
+    var bytesWritten: Long = 0L
+
+    override fun write(value: Int) {
+        out.write(value)
+        bytesWritten++
+    }
+
+    override fun write(buffer: ByteArray, offset: Int, length: Int) {
+        out.write(buffer, offset, length)
+        bytesWritten += length
+    }
+}
+
 class SafOpenMultipleDocumentsContract : ActivityResultContract<Array<String>, List<Uri>>() {
     override fun createIntent(context: Context, input: Array<String>): Intent {
         return Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -268,8 +283,12 @@ fun SecretVaultScreen(
                                     ?: throw IllegalStateException("Unable to create destination file")
                                 val output = context.contentResolver.openOutputStream(createdDocument.uri)
                                     ?: throw IllegalStateException("Unable to open destination")
-                                output.use { stream ->
+                                val countingOutput = CountingOutputStream(output)
+                                countingOutput.use { stream ->
                                     SecurityCrypto.decryptFileToOutputStream(context, item, stream)
+                                }
+                                check(item.sizeBytes <= 0L || countingOutput.bytesWritten == item.sizeBytes) {
+                                    "Restored file size does not match the stored original size"
                                 }
                                 updated.removeAll { it.id == item.id }
                                 encryptedFilesToDelete.add(encFile)
