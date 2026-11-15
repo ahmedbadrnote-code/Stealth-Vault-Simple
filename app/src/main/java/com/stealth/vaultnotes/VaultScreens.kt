@@ -57,6 +57,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -1199,6 +1201,23 @@ fun SecretVaultScreen(
     }
 }
 
+private suspend fun decryptViewerPreview(context: Context, item: VaultFileItem): File? {
+    var createdPreview: File? = null
+    return try {
+        withContext(Dispatchers.IO) {
+            createdPreview = SecurityCrypto.decryptFileToTempCache(context, item)
+            createdPreview
+        }
+    } catch (cancelled: CancellationException) {
+        // A blocking decrypt may finish after Compose has cancelled its viewer.
+        // Clean up the file produced by that abandoned operation before propagating cancellation.
+        withContext(NonCancellable + Dispatchers.IO) {
+            SecurityCrypto.deletePreviewIfTemporary(context, createdPreview)
+        }
+        throw cancelled
+    }
+}
+
 private fun readTextPrefix(file: File, maxChars: Int): String {
     if (maxChars <= 0) return ""
     return file.bufferedReader(Charsets.UTF_8).use { reader ->
@@ -1463,7 +1482,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
             val item = items[page]
             val isCurrentPage = pagerState.currentPage == page
             val decryptedFile by produceState<File?>(initialValue = null, key1 = item.id) {
-                value = withContext(Dispatchers.IO) { SecurityCrypto.decryptFileToTempCache(context, item) }
+                value = decryptViewerPreview(context, item)
             }
 
             DisposableEffect(item.id, decryptedFile) {
@@ -1577,9 +1596,7 @@ fun InAppPdfViewer(item: VaultFileItem, onClose: () -> Unit) {
 
     LaunchedEffect(item.id) {
         isDecrypting = true
-        decryptedFile = withContext(Dispatchers.IO) {
-            SecurityCrypto.decryptFileToTempCache(context, item)
-        }
+        decryptedFile = decryptViewerPreview(context, item)
         isDecrypting = false
     }
 
