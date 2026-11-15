@@ -118,21 +118,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-
-        // A normal SAF result is delivered before onResume and clears this flag.
-        // If the activity resumes while the picker is still marked active, the
-        // user likely left the picker/app without returning a result: fail closed.
-        if (isVaultPickerActive) {
-            isVaultPickerActive = false
-            if (isVaultOpenState.value) {
-                SecurityCrypto.lockVaultSession(this)
-                isVaultOpenState.value = false
-            }
-        }
-
+        isVaultPickerActive = false
         panicSensor?.start()
     }
-
     override fun onPause() {
         super.onPause()
         panicSensor?.stop()
