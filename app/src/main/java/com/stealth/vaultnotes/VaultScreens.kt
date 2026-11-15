@@ -1389,7 +1389,10 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
             }
 
             DisposableEffect(item.id, decryptedFile) {
-                onDispose { decryptedFile?.delete() }
+                // Capture the file for this effect instance. Reading the delegated state
+                // from onDispose can resolve to a newer preview and delete it prematurely.
+                val fileToDelete = decryptedFile
+                onDispose { fileToDelete?.delete() }
             }
 
             if (decryptedFile != null) {
@@ -1550,7 +1553,9 @@ fun InAppPdfViewer(item: VaultFileItem, onClose: () -> Unit) {
     }
 
     DisposableEffect(item.id, decryptedFile) {
-        onDispose { decryptedFile?.delete() }
+        // Capture the file for this effect instance so disposal cannot delete a newer preview.
+        val fileToDelete = decryptedFile
+        onDispose { fileToDelete?.delete() }
     }
 
     val isTextDocument = item.mimeType.startsWith("text/") || item.originalName.endsWith(".txt", ignoreCase = true)
