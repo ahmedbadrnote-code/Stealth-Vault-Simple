@@ -121,22 +121,33 @@ fun NoteEditorScreen(
 
     fun encodeBitmapToBase64AndInsert(bmp: Bitmap) {
         scope.launch {
-            val base64 = withContext(Dispatchers.Default) {
-                val maxDim = max(bmp.width, bmp.height)
-                val scaled = if (maxDim > 1080) {
-                    val ratio = 1080f / maxDim.toFloat()
-                    Bitmap.createScaledBitmap(
-                        bmp,
-                        (bmp.width * ratio).toInt().coerceAtLeast(1),
-                        (bmp.height * ratio).toInt().coerceAtLeast(1),
-                        true
-                    )
-                } else bmp
-                val out = ByteArrayOutputStream()
-                scaled.compress(Bitmap.CompressFormat.JPEG, 75, out)
-                Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+            var scaledBitmap: Bitmap? = null
+            try {
+                val base64 = withContext(Dispatchers.Default) {
+                    val maxDim = max(bmp.width, bmp.height)
+                    val scaled = if (maxDim > 1080) {
+                        val ratio = 1080f / maxDim.toFloat()
+                        Bitmap.createScaledBitmap(
+                            bmp,
+                            (bmp.width * ratio).toInt().coerceAtLeast(1),
+                            (bmp.height * ratio).toInt().coerceAtLeast(1),
+                            true
+                        )
+                    } else bmp
+                    scaledBitmap = scaled
+                    val out = ByteArrayOutputStream()
+                    scaled.compress(Bitmap.CompressFormat.JPEG, 75, out)
+                    Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+                }
+                webViewRef?.evaluateJavascript("insertBase64Image('data:image/jpeg;base64,$base64');", null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                Toast.makeText(context, "Could not insert selected image.", Toast.LENGTH_SHORT).show()
+            } finally {
+                scaledBitmap?.takeIf { it !== bmp && !it.isRecycled }?.recycle()
+                if (!bmp.isRecycled) bmp.recycle()
             }
-            webViewRef?.evaluateJavascript("insertBase64Image('data:image/jpeg;base64,$base64');", null)
         }
     }
 
