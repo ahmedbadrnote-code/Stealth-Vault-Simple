@@ -327,8 +327,11 @@ object SecurityCrypto {
                     ?: throw IllegalStateException("Unable to open selected file")
                 val streamedSize = input.use { copyStreamToFile(it, temp) }
                 check(temp.isFile) { "Imported file was not written" }
+                check(queriedSize <= 0L || streamedSize == queriedSize) {
+                    "Imported file size does not match the source file size"
+                }
                 check(temp.renameTo(target)) { "Unable to finalize vault file" }
-                val finalSize = if (streamedSize > 0L) streamedSize else queriedSize
+                val finalSize = streamedSize
                 VaultFileItem(
                     originalName = name,
                     encryptedFileName = filename,
