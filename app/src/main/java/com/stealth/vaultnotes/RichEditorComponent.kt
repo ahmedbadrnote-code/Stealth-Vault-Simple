@@ -61,6 +61,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -158,27 +159,42 @@ fun NoteEditorScreen(
     ) { uri: Uri? ->
         uri?.let {
             scope.launch {
-                val bmp = withContext(Dispatchers.IO) {
-                    try {
-                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        context.contentResolver.openInputStream(it)?.use { s ->
-                            BitmapFactory.decodeStream(s, null, bounds)
+                var decodedBitmap: Bitmap? = null
+                var handedOff = false
+                try {
+                    val bmp = withContext(Dispatchers.IO) {
+                        val decoded = try {
+                            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            context.contentResolver.openInputStream(it)?.use { s ->
+                                BitmapFactory.decodeStream(s, null, bounds)
+                            }
+                            var sample = 1
+                            while (bounds.outWidth / sample > 1280 || bounds.outHeight / sample > 1280) {
+                                sample *= 2
+                            }
+                            context.contentResolver.openInputStream(it)?.use { s ->
+                                BitmapFactory.decodeStream(s, null, BitmapFactory.Options().apply { inSampleSize = sample })
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            null
                         }
-                        var sample = 1
-                        while (bounds.outWidth / sample > 1280 || bounds.outHeight / sample > 1280) {
-                            sample *= 2
-                        }
-                        context.contentResolver.openInputStream(it)?.use { s ->
-                            BitmapFactory.decodeStream(s, null, BitmapFactory.Options().apply { inSampleSize = sample })
-                        }
-                    } catch (_: Exception) {
-                        null
+                        decodedBitmap = decoded
+                        decoded
                     }
-                }
-                if (bmp != null) {
-                    encodeBitmapToBase64AndInsert(bmp)
-                } else {
-                    Toast.makeText(context, "Could not load selected image.", Toast.LENGTH_SHORT).show()
+                    if (bmp != null) {
+                        handedOff = true
+                        encodeBitmapToBase64AndInsert(bmp)
+                    } else {
+                        Toast.makeText(context, "Could not load selected image.", Toast.LENGTH_SHORT).show()
+                    }
+                } finally {
+                    if (!handedOff) {
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            decodedBitmap?.takeIf { !it.isRecycled }?.recycle()
+                        }
+                    }
                 }
             }
         }
