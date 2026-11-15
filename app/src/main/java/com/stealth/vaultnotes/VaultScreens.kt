@@ -1150,19 +1150,30 @@ fun SecretVaultScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
                     onClick = {
                         if (currentTab == 3 && showSecretTrash) {
-                            val trashedNotes = secretNotes.filter { it.isTrashed }
                             val updated = secretNotes.filterNot { it.isTrashed }.toMutableList()
                             if (StorageRepository.saveSecretNotes(context, updated)) {
                                 secretNotes = updated
+                                Toast.makeText(context, "Private notes trash emptied.", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Could not empty private notes trash. Your notes were kept.", Toast.LENGTH_LONG).show()
                             }
                         } else if (currentTab == 4) {
                             val trashedFiles = vaultFiles.filter { it.isTrashed }
                             val updated = vaultFiles.filterNot { it.isTrashed }.toMutableList()
                             if (StorageRepository.saveVaultFiles(context, updated)) {
-                                trashedFiles.forEach {
-                                    File(StorageRepository.getVaultBlobDir(context), it.encryptedFileName).delete()
+                                var cleanupFailures = 0
+                                trashedFiles.forEach { item ->
+                                    val blob = File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName)
+                                    if (blob.exists() && !blob.delete() && blob.exists()) cleanupFailures++
                                 }
                                 vaultFiles = updated
+                                if (cleanupFailures == 0) {
+                                    Toast.makeText(context, "Vault trash emptied.", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Trash emptied, but $cleanupFailures stored file(s) could not be physically removed.", Toast.LENGTH_LONG).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "Could not empty vault trash. Your files were kept.", Toast.LENGTH_LONG).show()
                             }
                         }
                         showEmptyTrashDialog = false
