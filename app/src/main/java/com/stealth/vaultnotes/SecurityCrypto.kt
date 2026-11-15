@@ -217,6 +217,23 @@ object SecurityCrypto {
         return cipher.doFinal(encrypted.copyOfRange(12, encrypted.size))
     }
 
+    private fun copyStreamToFile(input: java.io.InputStream, target: File): Long {
+        var copied = 0L
+        FileOutputStream(target).use { output ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (count == 0) continue
+                output.write(buffer, 0, count)
+                copied += count
+            }
+            output.flush()
+            output.fd.sync()
+        }
+        return copied
+    }
+
     private fun encryptStreamToFile(context: Context, input: java.io.InputStream, target: File): Long {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, ensureAesKey(context))
@@ -262,16 +279,19 @@ object SecurityCrypto {
                 VaultMediaType.VIDEO -> "video/mp4"
                 VaultMediaType.DOCUMENT -> "application/pdf"
             }
-            val filename = UUID.randomUUID().toString() + ".vlt"
+            val extension = name.substringAfterLast('.', "")
+                .lowercase(Locale.ROOT)
+                .takeIf { it.length in 1..10 && it.all { ch -> ch.isLetterOrDigit() } } ?: "blob"
+            val filename = UUID.randomUUID().toString() + "." + extension
             val dir = StorageRepository.getVaultBlobDir(context)
             check(dir.exists() || dir.mkdirs()) { "Unable to create vault storage" }
             val target = File(dir, filename)
             val temp = File(dir, "$filename.tmp")
             try {
                 val input = resolver.openInputStream(uri) ?: return null
-                val streamedSize = input.use { encryptStreamToFile(context, it, temp) }
-                check(temp.length() >= 28L) { "Encrypted file is incomplete" }
-                check(temp.renameTo(target)) { "Unable to finalize encrypted file" }
+                val streamedSize = input.use { copyStreamToFile(it, temp) }
+                check(temp.isFile) { "Imported file was not written" }
+                check(temp.renameTo(target)) { "Unable to finalize vault file" }
                 val finalSize = if (streamedSize > 0L) streamedSize else queriedSize
                 VaultFileItem(
                     originalName = name,
@@ -280,7 +300,8 @@ object SecurityCrypto {
                     mediaType = mediaType,
                     sizeBytes = finalSize.coerceAtLeast(0L),
                     subFolder = subFolder.ifBlank { "General" },
-                    originalParentTreeUri = uri.toString()
+                    originalParentTreeUri = uri.toString(),
+                    isEncrypted = false
                 )
             } catch (e: Exception) {
                 temp.delete()
@@ -310,7 +331,32 @@ object SecurityCrypto {
             sessionGeneration
         }
         val encryptedFile = File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName)
-        require(encryptedFile.isFile && encryptedFile.length() >= 28L) { "Encrypted vault file is missing or invalid" }
+        require(encryptedFile.isFile) { "Vault file is missing" }
+
+        if (item.isEncrypted == false) {
+            FileInputStream(encryptedFile).use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (count == 0) continue
+                    synchronized(sessionLock) {
+                        check(vaultSessionUnlocked && sessionGeneration == sessionToken) {
+                            "Vault session ended during restore"
+                        }
+                        output.write(buffer, 0, count)
+                    }
+                }
+                synchronized(sessionLock) {
+                    check(vaultSessionUnlocked && sessionGeneration == sessionToken) {
+                        "Vault session ended during restore"
+                    }
+                    output.flush()
+                }
+            }
+            return
+        }
+        require(encryptedFile.length() >= 28L) { "Encrypted vault file is incomplete" }
 
         FileInputStream(encryptedFile).use { input ->
             val iv = ByteArray(12)
@@ -356,7 +402,11 @@ object SecurityCrypto {
                 sessionGeneration
             }
             val source = File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName)
-            if (!source.exists()) return null
+            if (!source.isFile) return null
+            // New files are already stored as ordinary files inside app-private storage.
+            // Return them directly; callers must use deletePreviewIfTemporary() for cleanup.
+            if (item.isEncrypted == false) return source
+            if (source.length() < 28L) return null
             val dir = File(context.cacheDir, "unlocked_preview")
             check(dir.exists() || dir.mkdirs()) { "Unable to create preview cache" }
             val ext = item.originalName.substringAfterLast('.', "").lowercase(Locale.ROOT)
@@ -404,6 +454,13 @@ object SecurityCrypto {
         } catch (_: Exception) {
             null
         }
+    }
+
+    fun deletePreviewIfTemporary(context: Context, file: File?) {
+        if (file == null) return
+        val previewDir = File(context.cacheDir, "unlocked_preview").canonicalFile
+        val candidate = runCatching { file.canonicalFile }.getOrNull() ?: return
+        if (candidate.parentFile == previewDir) candidate.delete()
     }
 
     fun clearDecryptedTempCache(context: Context) {
