@@ -140,6 +140,21 @@ object SecurityCrypto {
         return store.getKey(KEYSTORE_ALIAS, null) as? SecretKey
     }
 
+    private fun hasExistingEncryptedVaultData(context: Context): Boolean {
+        val filesDir = context.filesDir
+        val fixedFiles = listOf(
+            "vault_index.enc",
+            "vault_index.enc.bak",
+            "vault_secret_notes.enc",
+            "vault_secret_notes.enc.bak"
+        )
+        if (fixedFiles.any { File(filesDir, it).exists() }) return true
+        return filesDir.listFiles()?.any { file ->
+            file.name.startsWith("vault_folders_") &&
+                (file.name.endsWith(".enc") || file.name.endsWith(".enc.bak"))
+        } == true
+    }
+
     private fun getOrCreateKeystoreKey(): SecretKey {
         getExistingKeystoreKey()?.let { return it }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
@@ -202,6 +217,9 @@ object SecurityCrypto {
             }
             legacy.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         } else {
+            check(!hasExistingEncryptedVaultData(context)) {
+                "Vault encryption key is missing; refusing to generate a replacement for existing encrypted data"
+            }
             ByteArray(32).also { SecureRandom().nextBytes(it) }
         }
         val master = getOrCreateKeystoreKey()
