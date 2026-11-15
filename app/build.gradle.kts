@@ -3,6 +3,17 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// GitHub Actions supplies a persistent keystore through repository secrets.
+// Local builds without these values continue to use Android's normal debug signing.
+val vaultKeystoreFile = System.getenv("VAULT_KEYSTORE_FILE")?.let { file(it) }
+val vaultStorePassword = System.getenv("VAULT_KEYSTORE_PASSWORD")
+val vaultKeyAlias = System.getenv("VAULT_KEY_ALIAS")
+val vaultKeyPassword = System.getenv("VAULT_KEY_PASSWORD")
+val hasStableDebugSigning = vaultKeystoreFile?.isFile == true &&
+    !vaultStorePassword.isNullOrBlank() &&
+    !vaultKeyAlias.isNullOrBlank() &&
+    !vaultKeyPassword.isNullOrBlank()
+
 android {
     namespace = "com.stealth.vaultnotes"
     compileSdk = 34
@@ -12,12 +23,26 @@ android {
         applicationId = "com.stealth.vaultsimple"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
+        // GitHub Actions run numbers increase for each build, allowing in-place APK updates.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionName = "1.0-simple"
     }
 
+    signingConfigs {
+        create("stableDebug") {
+            storeFile = vaultKeystoreFile ?: rootProject.file("vaultsimple-upload.jks")
+            storePassword = vaultStorePassword ?: ""
+            keyAlias = vaultKeyAlias ?: "vaultsimple"
+            keyPassword = vaultKeyPassword ?: ""
+        }
+    }
+
     buildTypes {
-        debug
+        getByName("debug") {
+            if (hasStableDebugSigning) {
+                signingConfig = signingConfigs.getByName("stableDebug")
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
