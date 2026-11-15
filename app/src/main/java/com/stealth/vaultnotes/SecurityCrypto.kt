@@ -135,9 +135,13 @@ object SecurityCrypto {
         MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
-    private fun getOrCreateKeystoreKey(): SecretKey {
+    private fun getExistingKeystoreKey(): SecretKey? {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey(KEYSTORE_ALIAS, null) as? SecretKey)?.let { return it }
+        return store.getKey(KEYSTORE_ALIAS, null) as? SecretKey
+    }
+
+    private fun getOrCreateKeystoreKey(): SecretKey {
+        getExistingKeystoreKey()?.let { return it }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         generator.init(
             KeyGenParameterSpec.Builder(
@@ -177,7 +181,10 @@ object SecurityCrypto {
             // Never replace a wrapped key automatically. If the Android Keystore key
             // is unavailable or the wrapped value is damaged, fail closed so existing
             // encrypted data is not silently made inaccessible by a new data key.
-            val master = getOrCreateKeystoreKey()
+            val master = getExistingKeystoreKey()
+                ?: throw IllegalStateException(
+                    "Vault master key is missing; refusing to generate a replacement for existing encrypted data"
+                )
             val unwrapped = unwrapDataKey(master, wrappedValue)
             synchronized(sessionLock) {
                 check(vaultSessionUnlocked) { "Vault session was locked during key access" }
