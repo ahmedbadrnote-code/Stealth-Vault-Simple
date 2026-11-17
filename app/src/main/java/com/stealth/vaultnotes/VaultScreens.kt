@@ -309,7 +309,7 @@ fun SecretVaultScreen(
                     vaultFiles = updated
                     Toast.makeText(context, "$restoredCount file(s) restored to your device ✅", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "Restore completed, but vault cleanup failed.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Could not update vault records. Any files already copied remain on your device, and their originals remain in the vault.", Toast.LENGTH_LONG).show()
                 }
                 selectedIds.clear()
                 isBusy = false
