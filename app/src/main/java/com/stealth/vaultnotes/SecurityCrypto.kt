@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.webkit.MimeTypeMap
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -309,14 +310,22 @@ object SecurityCrypto {
                     if (si >= 0 && !cursor.isNull(si)) queriedSize = cursor.getLong(si)
                 }
             }
-            val mime = resolver.getType(uri) ?: when (mediaType) {
-                VaultMediaType.PHOTO -> "image/jpeg"
-                VaultMediaType.VIDEO -> "video/mp4"
-                VaultMediaType.DOCUMENT -> "application/pdf"
-            }
             val extension = name.substringAfterLast('.', "")
                 .lowercase(Locale.ROOT)
                 .takeIf { it.length in 1..10 && it.all { ch -> ch.isLetterOrDigit() } } ?: "blob"
+            val providerMime = resolver.getType(uri)?.takeIf { it.isNotBlank() }
+            val extensionMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            val mime = when {
+                providerMime != null &&
+                    !providerMime.equals("application/octet-stream", ignoreCase = true) &&
+                    !providerMime.equals("application/unknown", ignoreCase = true) -> providerMime
+                extensionMime != null -> extensionMime
+                else -> when (mediaType) {
+                    VaultMediaType.PHOTO -> "image/jpeg"
+                    VaultMediaType.VIDEO -> "video/mp4"
+                    VaultMediaType.DOCUMENT -> "application/pdf"
+                }
+            }
             val filename = UUID.randomUUID().toString() + "." + extension
             val dir = StorageRepository.getVaultBlobDir(context)
             check(dir.exists() || dir.mkdirs()) { "Unable to create vault storage" }
