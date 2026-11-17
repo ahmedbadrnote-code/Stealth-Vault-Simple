@@ -603,7 +603,7 @@ fun SecretVaultScreen(
 
                 if (StorageRepository.hasVaultStorageReadError()) {
                     Text(
-                        "Storage could not be read safely. Changes are disabled to protect existing encrypted data.",
+                        "Part of the vault storage could not be read safely. Some changes may be unavailable to protect your existing data.",
                         color = Color(0xFFFF8A80),
                         modifier = Modifier.padding(vertical = 8.dp),
                         fontSize = 13.sp
