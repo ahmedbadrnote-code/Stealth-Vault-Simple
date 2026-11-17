@@ -305,7 +305,7 @@ object SecurityCrypto {
                 if (cursor.moveToFirst()) {
                     val ni = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                     val si = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (ni >= 0) name = cursor.getString(ni) ?: name
+                    if (ni >= 0) name = cursor.getString(ni)?.takeIf { it.isNotBlank() } ?: name
                     if (si >= 0 && !cursor.isNull(si)) queriedSize = cursor.getLong(si)
                 }
             }
