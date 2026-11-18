@@ -426,10 +426,10 @@ fun SecretVaultScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1A1A1A)),
                 title = {
                     val headerTitle = when {
-                        selectedIds.isNotEmpty() -> "${selectedIds.size} selected"
-                        currentTab == 4 -> "Vault Trash (30d)"
-                        currentTab == 3 && showSecretTrash -> "Hidden Notes Trash"
-                        else -> "Private Vault 🔒"
+                        selectedIds.isNotEmpty() -> AppLanguage.text(context, "${selectedIds.size} selected", "تم تحديد ${selectedIds.size}")
+                        currentTab == 4 -> AppLanguage.text(context, "Vault Trash (30d)", "محذوفات الخزنة (30 يومًا)")
+                        currentTab == 3 && showSecretTrash -> AppLanguage.text(context, "Hidden Notes Trash", "محذوفات الملاحظات المخفية")
+                        else -> AppLanguage.text(context, "Private Vault 🔒", "الخزنة الخاصة 🔒")
                     }
                     Text(headerTitle, color = Color(0xFF69F0AE), fontWeight = FontWeight.Bold, maxLines = 1)
                 },
@@ -629,7 +629,7 @@ fun SecretVaultScreen(
                                         currentSubFolder = folder
                                         selectedIds.clear()
                                     },
-                                    label = { Text(folder) },
+                                    label = { Text(if (folder == "General") AppLanguage.text(context, "General", "عام") else folder) },
                                     leadingIcon = {
                                         if (coverItem != null) {
                                             VaultFolderCoverIcon(item = coverItem)
@@ -739,7 +739,7 @@ fun SecretVaultScreen(
                                                     modifier = Modifier.weight(1f)
                                                 )
                                                 if (note.isPinned && !showSecretTrash) {
-                                                    Icon(Icons.Default.PushPin, "Pinned", tint = Color(0xFFFFD54F), modifier = Modifier.size(18.dp))
+                                                    Icon(Icons.Default.PushPin, AppLanguage.text(context, "Pinned", "مثبّتة"), tint = Color(0xFFFFD54F), modifier = Modifier.size(18.dp))
                                                 }
                                             }
                                             Spacer(Modifier.height(4.dp))
@@ -755,7 +755,7 @@ fun SecretVaultScreen(
                                                 Text(dateFormatter.format(Date(note.updatedAt)), color = Color.Gray, fontSize = 12.sp)
                                                 if (showSecretTrash) {
                                                     val daysLeft = daysRemainingInTrash(note.trashedAt)
-                                                    Text("$daysLeft d left • Hold to restore", color = Color(0xFF69F0AE), fontSize = 12.sp)
+                                                    Text(AppLanguage.text(context, "$daysLeft d left • Hold to restore", "متبقي $daysLeft يوم • اضغط مطولًا للاستعادة"), color = Color(0xFF69F0AE), fontSize = 12.sp)
                                                 }
                                             }
                                         }
