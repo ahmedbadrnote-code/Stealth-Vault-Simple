@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +57,10 @@ class MainActivity : ComponentActivity() {
     private val isVaultOpenState = mutableStateOf(false)
     private val pendingOpenNoteId = mutableStateOf<String?>(null)
     @Volatile private var isVaultPickerActive = false
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,8 +87,14 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                StealthNotesApp(
+            val appDirection = if (AppLanguage.getLanguage(this@MainActivity) == AppLanguage.ARABIC) {
+                LayoutDirection.Rtl
+            } else {
+                LayoutDirection.Ltr
+            }
+            CompositionLocalProvider(LocalLayoutDirection provides appDirection) {
+                MaterialTheme(colorScheme = darkColorScheme()) {
+                    StealthNotesApp(
                     activity = this@MainActivity,
                     isVaultOpen = isVaultOpenState.value,
                     onVaultStateChange = { open ->
@@ -94,7 +106,8 @@ class MainActivity : ComponentActivity() {
                     onOpenNoteHandled = { handledId ->
                         if (pendingOpenNoteId.value == handledId) pendingOpenNoteId.value = null
                     }
-                )
+                    )
+                }
             }
         }
     }
@@ -169,6 +182,8 @@ fun StealthNotesApp(
     var showTrashBin by remember { mutableStateOf(false) }
     var showEmptyPublicTrashDialog by remember { mutableStateOf(false) }
     var activeNoteForEdit by remember { mutableStateOf<NoteItem?>(null) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
+    var selectedLanguage by remember { mutableStateOf(AppLanguage.getLanguage(context)) }
 
     LaunchedEffect(openNoteId, publicNotes, activeNoteForEdit, isVaultOpen, isFirstRun) {
         val requestedId = openNoteId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
@@ -427,6 +442,12 @@ fun StealthNotesApp(
                     )
                 },
                 actions = {
+                    IconButton(onClick = {
+                        selectedLanguage = AppLanguage.getLanguage(context)
+                        showLanguageDialog = true
+                    }) {
+                        Icon(Icons.Default.Language, contentDescription = "Change language", tint = Color.White)
+                    }
                     if (showTrashBin && displayedNotes.isNotEmpty()) {
                         IconButton(onClick = { showEmptyPublicTrashDialog = true }) {
                             Icon(Icons.Default.DeleteForever, contentDescription = "Empty trash", tint = Color(0xFFFF5252))
@@ -640,6 +661,53 @@ fun StealthNotesApp(
                 }
             }
         }
+    }
+
+    if (showLanguageDialog) {
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = {
+                Text(
+                    if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) "لغة التطبيق" else "App language",
+                    color = Color.White
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = selectedLanguage == AppLanguage.ARABIC,
+                            onClick = { selectedLanguage = AppLanguage.ARABIC }
+                        )
+                        Text("العربية", color = Color.White)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = selectedLanguage == AppLanguage.ENGLISH,
+                            onClick = { selectedLanguage = AppLanguage.ENGLISH }
+                        )
+                        Text("English", color = Color.White)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLanguageDialog = false
+                    if (selectedLanguage != AppLanguage.getLanguage(context)) {
+                        AppLanguage.setLanguage(context, selectedLanguage)
+                        activity.recreate()
+                    }
+                }) {
+                    Text(if (selectedLanguage == AppLanguage.ARABIC) "تطبيق" else "Apply")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLanguageDialog = false }) {
+                    Text(if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) "إلغاء" else "Cancel", color = Color.Gray)
+                }
+            }
+        )
     }
 
     if (showEmptyPublicTrashDialog) {
