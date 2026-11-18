@@ -193,7 +193,7 @@ fun SecretVaultScreen(
             }
             val targetFolder = currentSubFolder
             isBusy = true
-            busyMessage = "Moving ${uris.size} file(s) into the vault..."
+            busyMessage = AppLanguage.text(context, "Moving ${uris.size} file(s) into the vault...", "جارٍ نقل ${uris.size} ملفًا إلى الخزنة...")
             scope.launch {
                 val updated = vaultFiles.toMutableList()
                 val imported = mutableListOf<Pair<Uri, VaultFileItem>>()
@@ -225,15 +225,29 @@ fun SecretVaultScreen(
                     }
                     val originalsRemain = imported.size - deletedOriginals
                     val failedImports = uris.size - imported.size
-                    val message = buildString {
-                        append("${imported.size}/${uris.size} file(s) moved into the vault.")
-                        if (originalsRemain > 0) {
-                            append(" ${originalsRemain} original file(s) could not be deleted and remain in their original location.")
-                        } else if (imported.isNotEmpty()) {
-                            append(" The selected originals were removed from their source location.")
+                    val message = if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) {
+                        buildString {
+                            append("تم نقل ${imported.size} من أصل ${uris.size} ملفًا إلى الخزنة.")
+                            if (originalsRemain > 0) {
+                                append(" تعذّر حذف ${originalsRemain} نسخة أصلية، وما زالت في موقعها الأصلي.")
+                            } else if (imported.isNotEmpty()) {
+                                append(" تمت إزالة النسخ الأصلية المحددة من موقعها.")
+                            }
+                            if (failedImports > 0) {
+                                append(" تعذّر استيراد ${failedImports} ملفًا محددًا؛ وتم الاحتفاظ بنسخه الأصلية.")
+                            }
                         }
-                        if (failedImports > 0) {
-                            append(" ${failedImports} selected file(s) could not be imported; their originals were kept.")
+                    } else {
+                        buildString {
+                            append("${imported.size}/${uris.size} file(s) moved into the vault.")
+                            if (originalsRemain > 0) {
+                                append(" ${originalsRemain} original file(s) could not be deleted and remain in their original location.")
+                            } else if (imported.isNotEmpty()) {
+                                append(" The selected originals were removed from their source location.")
+                            }
+                            if (failedImports > 0) {
+                                append(" ${failedImports} selected file(s) could not be imported; their originals were kept.")
+                            }
                         }
                     }
                     Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -270,7 +284,7 @@ fun SecretVaultScreen(
         pendingRestoreItems = emptyList()
         if (treeUri != null && itemsToRestore.isNotEmpty()) {
             isBusy = true
-            busyMessage = "Restoring ${itemsToRestore.size} file(s)..."
+            busyMessage = AppLanguage.text(context, "Restoring ${itemsToRestore.size} file(s)...", "جارٍ استعادة ${itemsToRestore.size} ملفًا...")
             scope.launch {
                 val docDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
                 val updated = vaultFiles.toMutableList()
@@ -826,7 +840,7 @@ fun SecretVaultScreen(
                                                 VaultMediaType.DOCUMENT -> VaultDocumentThumbnail(item = item, modifier = Modifier.fillMaxSize())
                                             }
                                             if (isSelected) {
-                                                Icon(Icons.Default.CheckCircle, "Selected", tint = Color(0xFF69F0AE),
+                                                Icon(Icons.Default.CheckCircle, AppLanguage.text(context, "Selected", "محدد"), tint = Color(0xFF69F0AE),
                                                     modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(26.dp))
                                             }
                                             Column(
@@ -939,7 +953,7 @@ fun SecretVaultScreen(
                                                 Text(item.originalName, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                 val sizeKb = (item.sizeBytes / 1024L).coerceAtLeast(1L)
                                                 val dateStr = dateFormatter.format(Date(item.addedAt))
-                                                val trashInfo = if (item.isTrashed) " • ${daysRemainingInTrash(item.trashedAt)}d left" else ""
+                                                val trashInfo = if (item.isTrashed) AppLanguage.text(context, " • ${daysRemainingInTrash(item.trashedAt)}d left", " • متبقي ${daysRemainingInTrash(item.trashedAt)} يوم") else ""
                                                 Text("$sizeKb KB • $dateStr$trashInfo", color = Color.Gray, fontSize = 12.sp)
                                             }
                                         }
