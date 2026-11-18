@@ -3,6 +3,7 @@ package com.stealth.vaultnotes
 import android.Manifest
 import android.app.Activity
 import android.content.Context
+import androidx.activity.ComponentActivity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -118,6 +119,7 @@ class SafOpenMultipleDocumentsContract : ActivityResultContract<Array<String>, L
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SecretVaultScreen(
+    activity: ComponentActivity,
     onExitVault: () -> Unit,
     onPickerStateChange: (Boolean) -> Unit
 ) {
@@ -325,6 +327,7 @@ fun SecretVaultScreen(
 
     editingSecretNote?.let { secretNote ->
         NoteEditorScreen(
+            activity = activity,
             note = secretNote,
             onSave = { saved ->
                 val list = secretNotes.toMutableList()
