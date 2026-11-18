@@ -8,6 +8,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
@@ -78,6 +81,7 @@ data class SerializableStroke(val points: List<Pair<Float, Float>>, val colorHex
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteEditorScreen(
+    activity: ComponentActivity,
     note: NoteItem,
     onSave: (NoteItem) -> Unit,
     onBack: () -> Unit,
@@ -100,6 +104,7 @@ fun NoteEditorScreen(
     var showHighlightPicker by remember(note.id) { mutableStateOf(false) }
     var showImageSourceDialog by remember(note.id) { mutableStateOf(false) }
     var showReminderDialog by remember(note.id) { mutableStateOf(false) }
+    var showPrivatePdfWarning by remember(note.id) { mutableStateOf(false) }
     var textDirection by remember(note.id) { mutableStateOf(if (note.textDirection == "ltr") "ltr" else "rtl") }
     var alignState by remember(note.id) { mutableIntStateOf(if (note.textDirection == "ltr") 2 else 0) } // 0: Right, 1: Center, 2: Left
 
@@ -243,7 +248,76 @@ fun NoteEditorScreen(
         }
     }
 
-    // حفظ الملاحظة تلقائياً عند الضغط على زر الرجوع في الهاتف
+
+    fun launchPdfExport() {
+        val editorView = webViewRef
+        if (editorView == null) {
+            Toast.makeText(context, "The editor is not ready for PDF export.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val printTitle = title.trim()
+            .ifBlank { "Note" }
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            .take(80)
+
+        editorView.evaluateJavascript(
+            """
+            (function() {
+                if (typeof notifyEditorChanged === 'function') notifyEditorChanged();
+                var style = document.getElementById('pdf-print-style');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'pdf-print-style';
+                    document.head.appendChild(style);
+                }
+                style.textContent = '@page { size: A4; margin: 12mm; }' +
+                    '@media print {' +
+                    'html, body { background: #ffffff !important; color: #111111 !important; padding: 0 !important; margin: 0 !important; min-height: 0 !important; }' +
+                    '#editor { background: #ffffff !important; color: #111111 !important; min-height: 0 !important; outline: none !important; }' +
+                    'img { max-width: 100% !important; height: auto !important; break-inside: avoid; }' +
+                    '.todo-item { break-inside: avoid; }' +
+                    '}';
+                return true;
+            })();
+            """.trimIndent()
+        ) {
+            try {
+                if (activity.isFinishing || activity.isDestroyed) {
+                    throw IllegalStateException("The activity is no longer active.")
+                }
+                val printManager = activity.getSystemService(Context.PRINT_SERVICE) as? PrintManager
+                    ?: throw IllegalStateException("Print service is unavailable.")
+                val printAttributes = PrintAttributes.Builder()
+                    .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                    .setMinMargins(PrintAttributes.Margins(250, 250, 250, 250))
+                    .setColorMode(PrintAttributes.COLOR_MODE_COLOR)
+                    .build()
+
+                printManager.print(
+                    printTitle,
+                    editorView.createPrintDocumentAdapter(printTitle),
+                    printAttributes
+                )
+                Toast.makeText(
+                    context,
+                    "Choose Save as PDF in the print screen to save this note.",
+                    Toast.LENGTH_LONG
+                ).show()
+            } catch (error: Exception) {
+                Log.e("StealthVaultPDF", "Failed to start A4 PDF export", error)
+                val detail = error.localizedMessage?.takeIf { it.isNotBlank() }
+                val message = if (detail != null) {
+                    "Could not prepare PDF: $detail"
+                } else {
+                    "Could not prepare the PDF for printing."
+                }
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // Save the note automatically when the device back button is pressed.
     BackHandler {
         if (isDrawingMode) {
             isDrawingMode = false
@@ -341,6 +415,11 @@ fun NoteEditorScreen(
                         }
                     }
                     // حفظ وخروج
+                    IconButton(onClick = {
+                        if (allowReminders) launchPdfExport() else showPrivatePdfWarning = true
+                    }) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = "Export as PDF", tint = Color(0xFFFF8A65))
+                    }
                     IconButton(onClick = { saveAndExit() }) {
                         Icon(Icons.Default.Check, contentDescription = "Save", tint = Color(0xFF69F0AE))
                     }
@@ -1272,4 +1351,34 @@ fun NoteEditorScreen(
             }
         )
     }
+
+    if (showPrivatePdfWarning) {
+        AlertDialog(
+            onDismissRequest = { showPrivatePdfWarning = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = {
+                Text("Export private note?", color = Color.White, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text(
+                    "The PDF will be created outside the encrypted vault and will not be protected by the app passcode. Continue only if you want an external copy of this note.",
+                    color = Color.LightGray
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPrivatePdfWarning = false
+                    launchPdfExport()
+                }) {
+                    Text("Continue", color = Color(0xFFFF8A65))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPrivatePdfWarning = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
+        )
+    }
+
 }
