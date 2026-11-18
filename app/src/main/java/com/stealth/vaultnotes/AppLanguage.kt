@@ -21,6 +21,9 @@ object AppLanguage {
         return if (saved == ENGLISH) ENGLISH else ARABIC
     }
 
+    fun text(context: Context, english: String, arabic: String): String =
+        if (getLanguage(context) == ARABIC) arabic else english
+
     fun setLanguage(context: Context, language: String) {
         val normalized = if (language == ENGLISH) ENGLISH else ARABIC
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
