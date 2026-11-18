@@ -60,8 +60,12 @@ jobs:
             echo "::error::One or more persistent signing secrets are missing."
             exit 1
           fi
-          chmod +x ./gradlew
-          ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
+          else
+            gradle assembleDebug assembleRelease --no-daemon --stacktrace
+          fi
 
       - name: Verify APK Signatures and Signing Identity
         env:
