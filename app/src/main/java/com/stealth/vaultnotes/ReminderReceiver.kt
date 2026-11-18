@@ -22,9 +22,9 @@ class ReminderReceiver : BroadcastReceiver() {
         // Ignore legacy private-note alarms left by older app versions.
         if (intent.getBooleanExtra("privateNote", false)) return
 
-        val title = intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: "Note reminder"
+        val title = intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: AppLanguage.text(context, "Note reminder", "تذكير الملاحظة")
         val preview = intent.getStringExtra("preview")?.takeIf { it.isNotBlank() }
-            ?: "You have a scheduled note reminder"
+            ?: AppLanguage.text(context, "You have a scheduled note reminder", "لديك تذكير ملاحظة مجدول")
         val noteId = intent.getStringExtra("noteId") ?: "0"
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -33,7 +33,7 @@ class ReminderReceiver : BroadcastReceiver() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
-                "Note reminders",
+                AppLanguage.text(context, "Note reminders", "تذكيرات الملاحظات"),
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 lockscreenVisibility = NotificationCompat.VISIBILITY_PRIVATE
@@ -104,7 +104,7 @@ class ReminderReceiver : BroadcastReceiver() {
             if (note.isSecret || triggerAtMillis <= System.currentTimeMillis()) return
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val intent = Intent(context, ReminderReceiver::class.java).apply {
-                putExtra("title", note.title.ifBlank { "Untitled note" })
+                putExtra("title", note.title.ifBlank { AppLanguage.text(context, "Untitled note", "ملاحظة بلا عنوان") })
                 putExtra("preview", note.plainTextPreview.take(80))
                 putExtra("noteId", note.id)
             }
