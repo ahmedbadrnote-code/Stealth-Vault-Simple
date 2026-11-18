@@ -952,8 +952,8 @@ fun SecretVaultScreen(
                                                     }.toMutableList()
                                                     if (StorageRepository.saveVaultFiles(context, updated)) {
                                                         vaultFiles = updated
-                                                        Toast.makeText(context, "Album cover set 🖼️", Toast.LENGTH_SHORT).show()
-                                                    } else Toast.makeText(context, "Could not update album cover.", Toast.LENGTH_LONG).show()
+                                                        Toast.makeText(context, AppLanguage.text(context, "Album cover set 🖼️", "تم تعيين غلاف الألبوم 🖼️"), Toast.LENGTH_SHORT).show()
+                                                    } else Toast.makeText(context, AppLanguage.text(context, "Could not update album cover.", "تعذّر تحديث غلاف الألبوم."), Toast.LENGTH_LONG).show()
                                                 }) {
                                                     Icon(Icons.Default.Star, AppLanguage.text(context, "Album cover", "غلاف الألبوم"), tint = if (item.isAlbumCover) Color(0xFFFFD54F) else Color(0xFFB0B0B0))
                                                 }
@@ -1309,6 +1309,7 @@ private fun VaultVideoThumbnail(item: VaultFileItem, modifier: Modifier = Modifi
 @Composable
 private fun VaultDocumentThumbnail(item: VaultFileItem, modifier: Modifier = Modifier.size(104.dp)) {
     val context = LocalContext.current
+    val context = LocalContext.current
     val isTextDocument = item.mimeType.startsWith("text/") || item.originalName.endsWith(".txt", ignoreCase = true)
     if (isTextDocument) {
         val snippet by produceState<String?>(initialValue = null, key1 = item.id) {
@@ -1321,7 +1322,7 @@ private fun VaultDocumentThumbnail(item: VaultFileItem, modifier: Modifier = Mod
             }
         }
         Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF303030)).padding(7.dp)) {
-            Text(snippet?.ifBlank { "Empty text file" } ?: "Text document", color = Color(0xFFE0E0E0),
+            Text(snippet?.ifBlank { AppLanguage.text(context, "Empty text file", "ملف نصي فارغ") } ?: AppLanguage.text(context, "Text document", "مستند نصي"), color = Color(0xFFE0E0E0),
                 fontSize = 9.sp, lineHeight = 12.sp, maxLines = 8, overflow = TextOverflow.Ellipsis)
         }
     } else {
@@ -1329,7 +1330,7 @@ private fun VaultDocumentThumbnail(item: VaultFileItem, modifier: Modifier = Mod
             value = withContext(Dispatchers.IO) { decodeVaultPdfThumbnail(context, item, 480) }
         }
         if (bitmap != null) {
-            Image(bitmap!!.asImageBitmap(), contentDescription = "First page of ${item.originalName}",
+            Image(bitmap!!.asImageBitmap(), contentDescription = AppLanguage.text(context, "First page of ${item.originalName}", "الصفحة الأولى من ${item.originalName}"),
                 contentScale = ContentScale.Crop, modifier = modifier.clip(RoundedCornerShape(10.dp)))
         } else {
             Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF303030)),
