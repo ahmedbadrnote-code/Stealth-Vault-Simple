@@ -196,7 +196,7 @@ fun StealthNotesApp(
             activeNoteForEdit = requestedNote
             onOpenNoteHandled(requestedId)
         } else {
-            Toast.makeText(context, "This reminder note is no longer available.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, AppLanguage.text(context, "This reminder note is no longer available.", "تعذّر العثور على الملاحظة المرتبطة بهذا التذكير."), Toast.LENGTH_LONG).show()
             onOpenNoteHandled(requestedId)
         }
     }
@@ -212,13 +212,13 @@ fun StealthNotesApp(
             // Android will suppress the notification until the user enables it.
             ReminderReceiver.scheduleReminder(context, pending.first, pending.second)
             val message = if (granted) {
-                "Note reminder scheduled ⏰"
+                AppLanguage.text(context, "Note reminder scheduled ⏰", "تم ضبط تذكير الملاحظة ⏰")
             } else {
                 "Reminder time saved, but notifications are disabled. Enable them in Settings."
             }
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         } else if (!granted) {
-            Toast.makeText(context, "Notifications are disabled. Enable them in Settings to receive reminders.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, AppLanguage.text(context, "Notifications are disabled. Enable them in Settings to receive reminders.", "الإشعارات معطّلة. فعّلها من الإعدادات لاستقبال التذكيرات."), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -239,9 +239,9 @@ fun StealthNotesApp(
                     }
                 }
                 if (ok) {
-                    Toast.makeText(context, "All notes exported successfully ✅", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, AppLanguage.text(context, "All notes exported successfully ✅", "تم تصدير جميع الملاحظات بنجاح ✅"), Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "Could not export notes.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, AppLanguage.text(context, "Could not export notes.", "تعذّر تصدير الملاحظات."), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -276,9 +276,9 @@ fun StealthNotesApp(
                         ReminderReceiver.scheduleReminder(context, note, note.reminderTime!!)
                     }
                     publicNotes = refreshedNotes
-                    Toast.makeText(context, "Notes imported successfully ✅", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, AppLanguage.text(context, "Notes imported successfully ✅", "تم استيراد الملاحظات بنجاح ✅"), Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "Invalid backup file.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, AppLanguage.text(context, "Invalid backup file.", "ملف النسخة الاحتياطية غير صالح."), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -298,10 +298,10 @@ fun StealthNotesApp(
             ) {
                 Icon(Icons.Default.EditNote, contentDescription = null, tint = Color(0xFF69F0AE), modifier = Modifier.size(72.dp))
                 Spacer(Modifier.height(16.dp))
-                Text("Welcome to Notes Pro", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text(AppLanguage.text(context, "Welcome to Notes Pro", "مرحبًا بك في Notes Pro"), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "To secure your workspace, set your secret passcode now (letters, numbers, or symbols). Type it in the Search bar anytime to open your private vault.",
+                    AppLanguage.text(context, "To secure your workspace, set your secret passcode now (letters, numbers, or symbols). Type it in the Search bar anytime to open your private vault.", "لتأمين مساحة العمل، أنشئ رمز المرور السري الآن (حروف أو أرقام أو رموز). اكتب الرمز في شريط البحث في أي وقت لفتح خزنتك الخاصة."),
                     color = Color.Gray,
                     fontSize = 14.sp
                 )
@@ -309,13 +309,13 @@ fun StealthNotesApp(
                 OutlinedTextField(
                     value = newPasscode,
                     onValueChange = { newPasscode = it },
-                    label = { Text("Secret passcode") },
+                    label = { Text(AppLanguage.text(context, "Secret passcode", "رمز المرور السري")) },
                     singleLine = true,
                     visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrect = false),
                     trailingIcon = {
                         IconButton(onClick = { showPass = !showPass }) {
-                            Icon(if (showPass) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = "Toggle visibility", tint = Color.Gray)
+                            Icon(if (showPass) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = AppLanguage.text(context, "Toggle visibility", "إظهار أو إخفاء رمز المرور"), tint = Color.Gray)
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -324,7 +324,7 @@ fun StealthNotesApp(
                 OutlinedTextField(
                     value = confirmPasscode,
                     onValueChange = { confirmPasscode = it },
-                    label = { Text("Confirm passcode") },
+                    label = { Text(AppLanguage.text(context, "Confirm passcode", "تأكيد رمز المرور")) },
                     singleLine = true,
                     visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrect = false),
@@ -338,8 +338,8 @@ fun StealthNotesApp(
                         val cleanPass = newPasscode.trim()
                         val cleanConfirm = confirmPasscode.trim()
                         when {
-                            cleanPass.isEmpty() -> Toast.makeText(context, "Please enter a passcode.", Toast.LENGTH_SHORT).show()
-                            cleanPass != cleanConfirm -> Toast.makeText(context, "Passcodes do not match.", Toast.LENGTH_SHORT).show()
+                            cleanPass.isEmpty() -> Toast.makeText(context, AppLanguage.text(context, "Please enter a passcode.", "يرجى إدخال رمز المرور."), Toast.LENGTH_SHORT).show()
+                            cleanPass != cleanConfirm -> Toast.makeText(context, AppLanguage.text(context, "Passcodes do not match.", "رمزا المرور غير متطابقين."), Toast.LENGTH_SHORT).show()
                             else -> {
                                 scope.launch {
                                     val saved = withContext(Dispatchers.IO) {
@@ -353,14 +353,14 @@ fun StealthNotesApp(
                                     if (saved) {
                                         isFirstRun = false
                                     } else {
-                                        Toast.makeText(context, "Could not initialize secure storage. Please try again.", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, AppLanguage.text(context, "Could not initialize secure storage. Please try again.", "تعذّر تهيئة التخزين الآمن. حاول مرة أخرى."), Toast.LENGTH_LONG).show()
                                     }
                                 }
                             }
                         }
                     }
                 ) {
-                    Text("Get started", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(AppLanguage.text(context, "Get started", "ابدأ الآن"), fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
         }
@@ -407,7 +407,7 @@ fun StealthNotesApp(
                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 } else {
                     ReminderReceiver.scheduleReminder(context, reminderNote, timeMillis)
-                    Toast.makeText(context, "Note reminder scheduled ⏰", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, AppLanguage.text(context, "Note reminder scheduled ⏰", "تم ضبط تذكير الملاحظة ⏰"), Toast.LENGTH_SHORT).show()
                 }
             }
         )
@@ -436,7 +436,7 @@ fun StealthNotesApp(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1E1E1E)),
                 title = {
                     Text(
-                        if (showTrashBin) "Trash (30 days)" else "My Notes",
+                        if (showTrashBin) AppLanguage.text(context, "Trash (30 days)", "المحذوفات (30 يومًا)") else AppLanguage.text(context, "My Notes", "ملاحظاتي"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
@@ -446,23 +446,23 @@ fun StealthNotesApp(
                         selectedLanguage = AppLanguage.getLanguage(context)
                         showLanguageDialog = true
                     }) {
-                        Icon(Icons.Default.Language, contentDescription = "Change language", tint = Color.White)
+                        Icon(Icons.Default.Language, contentDescription = AppLanguage.text(context, "Change language", "تغيير اللغة"), tint = Color.White)
                     }
                     if (showTrashBin && displayedNotes.isNotEmpty()) {
                         IconButton(onClick = { showEmptyPublicTrashDialog = true }) {
-                            Icon(Icons.Default.DeleteForever, contentDescription = "Empty trash", tint = Color(0xFFFF5252))
+                            Icon(Icons.Default.DeleteForever, contentDescription = AppLanguage.text(context, "Empty trash", "إفراغ سلة المحذوفات"), tint = Color(0xFFFF5252))
                         }
                     }
                     IconButton(onClick = { exportLauncher.launch("notes_backup.json") }) {
-                        Icon(Icons.Default.UploadFile, contentDescription = "Export notes", tint = Color.White)
+                        Icon(Icons.Default.UploadFile, contentDescription = AppLanguage.text(context, "Export notes", "تصدير الملاحظات"), tint = Color.White)
                     }
                     IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) }) {
-                        Icon(Icons.Default.Download, contentDescription = "Import notes", tint = Color.White)
+                        Icon(Icons.Default.Download, contentDescription = AppLanguage.text(context, "Import notes", "استيراد الملاحظات"), tint = Color.White)
                     }
                     IconButton(onClick = { showTrashBin = !showTrashBin }) {
                         Icon(
                             Icons.Default.DeleteSweep,
-                            contentDescription = "Trash",
+                            contentDescription = AppLanguage.text(context, "Trash", "المحذوفات"),
                             tint = if (showTrashBin) Color(0xFFFF5252) else Color.White
                         )
                     }
@@ -476,7 +476,7 @@ fun StealthNotesApp(
                     contentColor = Color.Black,
                     onClick = { activeNoteForEdit = NoteItem() }
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "New note")
+                    Icon(Icons.Default.Add, contentDescription = AppLanguage.text(context, "New note", "ملاحظة جديدة"))
                 }
             }
         }
@@ -494,12 +494,12 @@ fun StealthNotesApp(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search notes...", color = Color.Gray) },
+                placeholder = { Text(AppLanguage.text(context, "Search notes...", "ابحث في الملاحظات..."), color = Color.Gray) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = Color.Gray)
+                            Icon(Icons.Default.Clear, contentDescription = AppLanguage.text(context, "Clear search", "مسح البحث"), tint = Color.Gray)
                         }
                     }
                 },
@@ -525,7 +525,7 @@ fun StealthNotesApp(
                                     if (verification.second != null) {
                                         Toast.makeText(
                                             context,
-                                            "Unable to unlock the vault. Existing encrypted data has been preserved.",
+                                            AppLanguage.text(context, "Unable to unlock the vault. Existing encrypted data has been preserved.", "تعذّر فتح الخزنة. تم الحفاظ على البيانات المشفّرة الحالية."),
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
@@ -552,9 +552,9 @@ fun StealthNotesApp(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         when {
-                            StorageRepository.hasPublicNotesReadError() -> "Notes could not be read safely. Existing data has been protected; do not clear app data."
-                            showTrashBin -> "Trash is empty"
-                            else -> "No notes yet. Tap + to create one."
+                            StorageRepository.hasPublicNotesReadError() -> AppLanguage.text(context, "Notes could not be read safely. Existing data has been protected; do not clear app data.", "تعذّرت قراءة الملاحظات بأمان. تمت حماية البيانات الحالية؛ لا تمسح بيانات التطبيق.")
+                            showTrashBin -> AppLanguage.text(context, "Trash is empty", "سلة المحذوفات فارغة")
+                            else -> AppLanguage.text(context, "No notes yet. Tap + to create one.", "لا توجد ملاحظات بعد. اضغط + لإنشاء ملاحظة.")
                         },
                         color = if (StorageRepository.hasPublicNotesReadError()) Color(0xFFFF8A80) else Color.Gray
                     )
@@ -582,9 +582,9 @@ fun StealthNotesApp(
                                             publicNotes = updated
                                             if (movingToTrash) {
                                                 ReminderReceiver.cancelReminder(context, note.id)
-                                                Toast.makeText(context, "Moved to Trash (30 days)", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, AppLanguage.text(context, "Moved to Trash (30 days)", "نُقلت إلى المحذوفات (30 يومًا)"), Toast.LENGTH_SHORT).show()
                                             } else {
-                                                Toast.makeText(context, "Note restored ✅", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, AppLanguage.text(context, "Note restored ✅", "تمت استعادة الملاحظة ✅"), Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -601,7 +601,7 @@ fun StealthNotesApp(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = note.title.ifBlank { "Untitled" },
+                                            text = note.title.ifBlank { AppLanguage.text(context, "Untitled", "بلا عنوان") },
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 17.sp,
@@ -612,7 +612,7 @@ fun StealthNotesApp(
                                         if (note.isPinned && !showTrashBin) {
                                             Icon(
                                                 Icons.Default.PushPin,
-                                                contentDescription = "Pinned",
+                                                contentDescription = AppLanguage.text(context, "Pinned", "مثبّتة"),
                                                 tint = Color(0xFFFFD54F),
                                                 modifier = Modifier.size(18.dp)
                                             )
@@ -623,7 +623,7 @@ fun StealthNotesApp(
 
                                     // سطرين من المحتوى
                                     Text(
-                                        text = note.plainTextPreview.ifBlank { "Empty note..." },
+                                        text = note.plainTextPreview.ifBlank { AppLanguage.text(context, "Empty note...", "ملاحظة فارغة...") },
                                         color = Color(0xFFB0B0B0),
                                         fontSize = 14.sp,
                                         maxLines = 2,
@@ -640,7 +640,7 @@ fun StealthNotesApp(
                                     ) {
                                         Text(formattedDate, color = Color.Gray, fontSize = 12.sp)
                                         if (showTrashBin) {
-                                            Text("Long-press to restore", color = Color(0xFF69F0AE), fontSize = 12.sp)
+                                            Text(AppLanguage.text(context, "Long-press to restore", "اضغط مطولًا للاستعادة"), color = Color(0xFF69F0AE), fontSize = 12.sp)
                                         }
                                     }
                                 }
@@ -652,7 +652,7 @@ fun StealthNotesApp(
                                             publicNotes = updated
                                         }
                                     }) {
-                                        Icon(Icons.Default.DeleteForever, contentDescription = "Delete permanently", tint = Color(0xFFFF5252))
+                                        Icon(Icons.Default.DeleteForever, contentDescription = AppLanguage.text(context, "Delete permanently", "حذف نهائي"), tint = Color(0xFFFF5252))
                                     }
                                 }
                             }
@@ -669,7 +669,7 @@ fun StealthNotesApp(
             containerColor = Color(0xFF1E1E1E),
             title = {
                 Text(
-                    if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) "لغة التطبيق" else "App language",
+                    if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) AppLanguage.text(context, "لغة التطبيق", "لغة التطبيق") else AppLanguage.text(context, "App language", AppLanguage.text(context, "لغة التطبيق", "لغة التطبيق")),
                     color = Color.White
                 )
             },
@@ -699,12 +699,12 @@ fun StealthNotesApp(
                         activity.recreate()
                     }
                 }) {
-                    Text(if (selectedLanguage == AppLanguage.ARABIC) "تطبيق" else "Apply")
+                    Text(if (selectedLanguage == AppLanguage.ARABIC) "تطبيق" else AppLanguage.text(context, "Apply", "تطبيق"))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showLanguageDialog = false }) {
-                    Text(if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) "إلغاء" else "Cancel", color = Color.Gray)
+                    Text(if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) "إلغاء" else AppLanguage.text(context, "Cancel", "إلغاء"), color = Color.Gray)
                 }
             }
         )
@@ -714,8 +714,8 @@ fun StealthNotesApp(
         AlertDialog(
             onDismissRequest = { showEmptyPublicTrashDialog = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text("Empty Trash Permanently?", color = Color.White) },
-            text = { Text("All trashed notes will be permanently deleted.", color = Color.LightGray) },
+            title = { Text(AppLanguage.text(context, "Empty Trash Permanently?", "إفراغ سلة المحذوفات نهائيًا؟"), color = Color.White) },
+            text = { Text(AppLanguage.text(context, "All trashed notes will be permanently deleted.", "سيتم حذف جميع الملاحظات الموجودة في سلة المحذوفات نهائيًا."), color = Color.LightGray) },
             confirmButton = {
                 Button(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
@@ -729,12 +729,12 @@ fun StealthNotesApp(
                         showEmptyPublicTrashDialog = false
                     }
                 ) {
-                    Text("Delete All", color = Color.White)
+                    Text(AppLanguage.text(context, "Delete All", "حذف الكل"), color = Color.White)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showEmptyPublicTrashDialog = false }) {
-                    Text("Cancel", color = Color.Gray)
+                    Text(AppLanguage.text(context, "Cancel", "إلغاء"), color = Color.Gray)
                 }
             }
         )
