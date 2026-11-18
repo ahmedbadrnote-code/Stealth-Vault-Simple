@@ -3,8 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// GitHub Actions supplies a persistent keystore through repository secrets.
-// Local builds without these values continue to use Android's normal debug signing.
+// The same persistent keystore signs both debug (for continuity with existing
+// test installs) and release APKs. Release builds intentionally fail if secrets
+// or the keystore are missing; they must never fall back to an unsigned APK.
 val vaultKeystoreFile = System.getenv("VAULT_KEYSTORE_FILE")?.let { file(it) }
 val vaultStorePassword = System.getenv("VAULT_KEYSTORE_PASSWORD")
 val vaultKeyAlias = System.getenv("VAULT_KEY_ALIAS")
@@ -19,18 +20,24 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        // Separate application ID so this experimental edition installs beside the original.
+        // Separate application ID so this edition installs beside the original.
         applicationId = "com.stealth.vaultsimple"
         minSdk = 26
         targetSdk = 34
-        // GitHub Actions run numbers increase for each build, allowing in-place APK updates.
+        // CI run numbers increase monotonically, allowing in-place APK updates.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-        versionName = "1.0-simple"
+        versionName = "1.0.0"
     }
 
     signingConfigs {
         create("stableDebug") {
-            storeFile = vaultKeystoreFile ?: rootProject.file("vaultsimple-upload.jks")
+            storeFile = vaultKeystoreFile ?: rootProject.file("missing-vaultsimple-signing-key.jks")
+            storePassword = vaultStorePassword ?: ""
+            keyAlias = vaultKeyAlias ?: "vaultsimple"
+            keyPassword = vaultKeyPassword ?: ""
+        }
+        create("stableRelease") {
+            storeFile = vaultKeystoreFile ?: rootProject.file("missing-vaultsimple-signing-key.jks")
             storePassword = vaultStorePassword ?: ""
             keyAlias = vaultKeyAlias ?: "vaultsimple"
             keyPassword = vaultKeyPassword ?: ""
@@ -44,6 +51,7 @@ android {
             }
         }
         release {
+            signingConfig = signingConfigs.getByName("stableRelease")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
