@@ -83,6 +83,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 StealthNotesApp(
+                    activity = this@MainActivity,
                     isVaultOpen = isVaultOpenState.value,
                     onVaultStateChange = { open ->
                         if (!open) SecurityCrypto.lockVaultSession(this)
@@ -150,6 +151,7 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun StealthNotesApp(
+    activity: ComponentActivity,
     isVaultOpen: Boolean,
     onVaultStateChange: (Boolean) -> Unit,
     onVaultPickerStateChange: (Boolean) -> Unit,
@@ -353,6 +355,7 @@ fun StealthNotesApp(
     // 2. لو الخزنة السرية مفتوحة
     if (isVaultOpen) {
         SecretVaultScreen(
+            activity = activity,
             onExitVault = { onVaultStateChange(false) },
             onPickerStateChange = onVaultPickerStateChange
         )
@@ -362,6 +365,7 @@ fun StealthNotesApp(
     // 3. لو فاتح ملاحظة في المحرر المتقدم
     activeNoteForEdit?.let { note ->
         NoteEditorScreen(
+            activity = activity,
             note = note,
             onSave = { updated ->
                 val list = publicNotes.toMutableList()
