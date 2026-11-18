@@ -1682,6 +1682,7 @@ fun InAppPdfViewer(item: VaultFileItem, onClose: () -> Unit) {
 
 @Composable
 private fun PdfPageImage(file: File, pageIndex: Int, renderMutex: Mutex) {
+    val context = LocalContext.current
     val bitmap by produceState<Bitmap?>(initialValue = null, file, pageIndex) {
         value = withContext(Dispatchers.IO) {
             renderMutex.withLock {
