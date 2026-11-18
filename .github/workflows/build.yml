@@ -7,9 +7,12 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-apk:
-    name: Compile & Package Android APK
+    name: Build, Sign & Verify Android APKs
     runs-on: ubuntu-latest
 
     steps:
@@ -32,12 +35,13 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Prepare Stable Debug Signing Key
+      - name: Prepare Persistent Signing Key
         env:
           VAULT_KEYSTORE_BASE64: ${{ secrets.VAULT_KEYSTORE_BASE64 }}
         run: |
+          set -euo pipefail
           if [ -z "$VAULT_KEYSTORE_BASE64" ]; then
-            echo "Missing GitHub Actions secret: VAULT_KEYSTORE_BASE64"
+            echo "::error::Missing VAULT_KEYSTORE_BASE64 repository secret."
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/vaultsimple-signing"
@@ -45,31 +49,55 @@ jobs:
           test -s "$RUNNER_TEMP/vaultsimple-signing/vaultsimple-upload.jks"
           echo "VAULT_KEYSTORE_FILE=$RUNNER_TEMP/vaultsimple-signing/vaultsimple-upload.jks" >> "$GITHUB_ENV"
 
-      - name: Build Debug APK with Stable Signature
+      - name: Build Debug and Release APKs
         env:
           VAULT_KEYSTORE_PASSWORD: ${{ secrets.VAULT_KEYSTORE_PASSWORD }}
           VAULT_KEY_ALIAS: ${{ secrets.VAULT_KEY_ALIAS }}
           VAULT_KEY_PASSWORD: ${{ secrets.VAULT_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
           if [ -z "$VAULT_KEYSTORE_PASSWORD" ] || [ -z "$VAULT_KEY_ALIAS" ] || [ -z "$VAULT_KEY_PASSWORD" ]; then
-            echo "One or more stable signing secrets are missing."
+            echo "::error::One or more persistent signing secrets are missing."
             exit 1
           fi
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            ./gradlew assembleDebug --no-daemon --stacktrace
-          else
-            gradle assembleDebug --no-daemon --stacktrace
-          fi
+          chmod +x ./gradlew
+          ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
 
-      - name: Verify Generated APK Exists
+      - name: Verify APK Signatures and Signing Identity
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
-          ls -lh app/build/outputs/apk/debug/app-debug.apk
+          set -euo pipefail
+          DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
+          RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$DEBUG_APK"
+          test -s "$RELEASE_APK"
+          APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          "$APKSIGNER" verify --verbose "$DEBUG_APK"
+          "$APKSIGNER" verify --verbose "$RELEASE_APK"
+          DEBUG_CERT=$("$APKSIGNER" verify --print-certs "$DEBUG_APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          RELEASE_CERT=$("$APKSIGNER" verify --print-certs "$RELEASE_APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          test -n "$DEBUG_CERT"
+          test -n "$RELEASE_CERT"
+          if [ "$DEBUG_CERT" != "$RELEASE_CERT" ]; then
+            echo "::error::Debug and release APKs were signed with different certificates."
+            exit 1
+          fi
+          echo "Verified identical debug/release signing certificate: $RELEASE_CERT"
+          ls -lh "$DEBUG_APK" "$RELEASE_APK"
 
-      - name: Upload Ready APK Artifact
+      - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Stealth-Vault-Simple-Debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stealth-Vault-Simple-v1.0.0-Release-APK
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 90
