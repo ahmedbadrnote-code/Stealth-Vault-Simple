@@ -38,8 +38,11 @@ object AppLanguage {
 
     fun updateLauncherAlias(context: Context, language: String) {
         val packageManager = context.packageManager
-        val arabicAlias = ComponentName(context, "${context.packageName}.MainActivityArabic")
-        val englishAlias = ComponentName(context, "${context.packageName}.MainActivityEnglish")
+        // Activity aliases are declared in the app namespace, which can differ
+        // from applicationId/context.packageName. Resolve them from MainActivity.
+        val activityPackage = MainActivity::class.java.name.substringBeforeLast('.')
+        val arabicAlias = ComponentName(context, "$activityPackage.MainActivityArabic")
+        val englishAlias = ComponentName(context, "$activityPackage.MainActivityEnglish")
         val useArabic = language != ENGLISH
 
         val destinationAlias = if (useArabic) arabicAlias else englishAlias
