@@ -9,6 +9,7 @@ import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.provider.DocumentsContract
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -253,6 +254,7 @@ class VaultTransferService : Service() {
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var transferWakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -289,6 +291,21 @@ class VaultTransferService : Service() {
             stopSelf(startId)
             return START_NOT_STICKY
         }
+        try {
+            val powerManager = getSystemService(PowerManager::class.java)
+            transferWakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "StealthVault:BackgroundTransfer"
+            ).apply {
+                setReferenceCounted(false)
+                acquire(6L * 60L * 60L * 1000L)
+            }
+        } catch (_: Exception) {
+            SecurityCrypto.finishTransferKey(transferId)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
 
         serviceScope.launch {
             var success = false
@@ -307,6 +324,7 @@ class VaultTransferService : Service() {
                 success = false
             } finally {
                 SecurityCrypto.finishTransferKey(transferId)
+                releaseTransferWakeLock()
                 sendBroadcast(
                     Intent(ACTION_FINISHED)
                         .setPackage(packageName)
@@ -433,7 +451,17 @@ class VaultTransferService : Service() {
         }
     }
 
+    private fun releaseTransferWakeLock() {
+        try {
+            transferWakeLock?.let { if (it.isHeld) it.release() }
+        } catch (_: Exception) {
+        } finally {
+            transferWakeLock = null
+        }
+    }
+
     override fun onDestroy() {
+        releaseTransferWakeLock()
         serviceScope.cancel()
         super.onDestroy()
     }
