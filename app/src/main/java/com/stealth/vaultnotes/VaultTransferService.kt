@@ -178,18 +178,23 @@ object VaultTransferManager {
                 return@forEach
             }
             if (SecurityCrypto.transferKey(journal.id) != null) return@forEach
+            var cleanupComplete = true
             when (journal.operation) {
                 "IMPORT" -> {
-                    journal.entries.forEach entryLoop@ { entry ->
+                    journal.entries.forEach { entry ->
                         val prefix = entry.blobPrefix
                         if (prefix != null) {
                             val committed = index.any { it.encryptedFileName.startsWith(prefix) }
                             if (committed) {
                                 entry.sourceUri?.let { uri ->
-                                    SecurityCrypto.deleteOriginalDocument(context, Uri.parse(uri))
+                                    if (!SecurityCrypto.deleteOriginalDocument(context, Uri.parse(uri))) {
+                                        cleanupComplete = false
+                                    }
                                 }
                             } else {
-                                blobDir.listFiles()?.filter { it.name.startsWith(prefix) }?.forEach { it.delete() }
+                                blobDir.listFiles()?.filter { it.name.startsWith(prefix) }?.forEach {
+                                    if (it.exists() && !it.delete() && it.exists()) cleanupComplete = false
+                                }
                             }
                         }
                     }
@@ -202,39 +207,47 @@ object VaultTransferManager {
                         val item = journal.selectedItems.firstOrNull { it.id == entry.itemId }
                         when (entry.state) {
                             "COPYING", "PENDING", "FAILED" -> {
-                                entry.targetUri?.let { deleteDocument(context, Uri.parse(it)) }
+                                entry.targetUri?.let {
+                                    if (!deleteDocument(context, Uri.parse(it))) cleanupComplete = false
+                                }
                                 entry.temporaryName?.let { name ->
-                                    destination?.listFiles()?.filter { it.name == name }?.forEach { it.delete() }
+                                    destination?.listFiles()?.filter { it.name == name }?.forEach {
+                                        if (!it.delete() && it.exists()) cleanupComplete = false
+                                    }
                                 }
                             }
                             "OUTPUT_COMPLETE" -> {
                                 if (item != null && index.none { it.id == item.id }) {
-                                    item.encryptedFileName.let { File(blobDir, it).delete() }
+                                    val blob = File(blobDir, item.encryptedFileName)
+                                    if (blob.exists() && !blob.delete() && blob.exists()) cleanupComplete = false
                                 }
                             }
                             "COMMITTED" -> {
-                                item?.let { File(blobDir, it.encryptedFileName).delete() }
+                                item?.let {
+                                    val blob = File(blobDir, it.encryptedFileName)
+                                    if (blob.exists() && !blob.delete() && blob.exists()) cleanupComplete = false
+                                }
                             }
                         }
                     }
                     val knownTempNames = journal.entries.mapNotNull { it.temporaryName }.toSet()
                     destination?.listFiles()?.filter {
                         it.name?.startsWith(".svxfer_${journal.id}_") == true && it.name in knownTempNames
-                    }?.forEach { it.delete() }
+                    }?.forEach { if (!it.delete() && it.exists()) cleanupComplete = false }
                 }
             }
-            file.delete()
+            if (cleanupComplete) file.delete()
         }
         // Only temporary files belonging to a transfer are eligible for cleanup.
         blobDir.listFiles()?.filter { it.name.startsWith("xfer_") && it.name.endsWith(".tmp") }
             ?.forEach { it.delete() }
     }
 
-    private fun deleteDocument(context: Context, uri: Uri) {
-        try {
+    private fun deleteDocument(context: Context, uri: Uri): Boolean {
+        return try {
             DocumentsContract.deleteDocument(context.contentResolver, uri)
         } catch (_: Exception) {
-            DocumentFile.fromSingleUri(context, uri)?.delete()
+            DocumentFile.fromSingleUri(context, uri)?.delete() == true
         }
     }
 
@@ -421,10 +434,15 @@ class VaultTransferService : Service() {
                     current.filterNot { it.id == item.id }
                 }
                 if (indexSaved) {
-                    File(StorageRepository.getVaultBlobDir(this), item.encryptedFileName).delete()
-                    entry.state = "COMMITTED"
-                    VaultTransferManager.writeJournal(journalFile, journal, key)
-                    completed++
+                    val blob = File(StorageRepository.getVaultBlobDir(this), item.encryptedFileName)
+                    if (blob.exists() && !blob.delete() && blob.exists()) {
+                        entry.state = "OUTPUT_COMPLETE"
+                        VaultTransferManager.writeJournal(journalFile, journal, key)
+                    } else {
+                        entry.state = "COMMITTED"
+                        VaultTransferManager.writeJournal(journalFile, journal, key)
+                        completed++
+                    }
                 }
             } catch (_: Exception) {
                 if (entry.state == "COPYING") {
