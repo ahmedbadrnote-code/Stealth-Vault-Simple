@@ -112,6 +112,9 @@ object VaultTransferManager {
     }
 
     private fun start(context: Context, journal: VaultTransferJournal): Boolean {
+        // The service is intentionally single-transfer: this keeps one scoped key,
+        // one journal, and one foreground lifecycle active at a time.
+        if (SecurityCrypto.hasActiveTransfers()) return false
         val key = try {
             SecurityCrypto.captureTransferKey(context, journal.id)
         } catch (_: Exception) {
