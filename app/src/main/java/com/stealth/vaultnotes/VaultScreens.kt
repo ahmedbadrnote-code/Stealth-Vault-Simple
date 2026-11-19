@@ -1323,7 +1323,6 @@ private fun VaultVideoThumbnail(item: VaultFileItem, modifier: Modifier = Modifi
 @Composable
 private fun VaultDocumentThumbnail(item: VaultFileItem, modifier: Modifier = Modifier.size(104.dp)) {
     val context = LocalContext.current
-    val context = LocalContext.current
     val isTextDocument = item.mimeType.startsWith("text/") || item.originalName.endsWith(".txt", ignoreCase = true)
     if (isTextDocument) {
         val snippet by produceState<String?>(initialValue = null, key1 = item.id) {
