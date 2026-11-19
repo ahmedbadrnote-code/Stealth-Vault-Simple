@@ -55,7 +55,7 @@ object SecurityCrypto {
         require(transferId.isNotBlank())
         val key = synchronized(sessionLock) {
             check(vaultSessionUnlocked) { "Vault session is locked" }
-            ensureAesKey(context)
+            cachedAesKey ?: throw IllegalStateException("Vault key is not ready for transfer")
         }
         check(transferKeys.putIfAbsent(transferId, key) == null) {
             "Transfer key already exists"
@@ -71,7 +71,7 @@ object SecurityCrypto {
 
     internal fun activeTransferKey(context: Context): SecretKey = synchronized(sessionLock) {
         check(vaultSessionUnlocked) { "Vault session is locked" }
-        ensureAesKey(context)
+        cachedAesKey ?: throw IllegalStateException("Vault key is not ready")
     }
 
     internal fun encryptBytesForTransfer(key: SecretKey, plain: ByteArray): ByteArray {
