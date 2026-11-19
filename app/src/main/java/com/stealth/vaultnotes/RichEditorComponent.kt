@@ -393,6 +393,9 @@ fun NoteEditorScreen(
                     IconButton(onClick = { webViewRef?.evaluateJavascript("document.execCommand('undo'); notifyEditorChanged();", null) }) {
                         Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = AppLanguage.text(context, "Undo", "تراجع"), tint = Color.White)
                     }
+                    IconButton(onClick = { webViewRef?.evaluateJavascript("document.execCommand('redo'); notifyEditorChanged();", null) }) {
+                        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = AppLanguage.text(context, "Redo", "إعادة"), tint = Color.White)
+                    }
                     IconButton(onClick = { saveAndExit() }) {
                         Icon(Icons.Default.Check, contentDescription = AppLanguage.text(context, "Save", "حفظ"), tint = Color(0xFF69F0AE))
                     }
