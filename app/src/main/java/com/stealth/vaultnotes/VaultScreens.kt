@@ -451,6 +451,24 @@ fun SecretVaultScreen(
                 },
                 actions = {
                     if (selectedIds.isNotEmpty()) {
+                        if (filteredFiles.isNotEmpty()) {
+                            val allVisibleSelected = filteredFiles.all { it.id in selectedIds }
+                            IconButton(onClick = {
+                                if (allVisibleSelected) {
+                                    selectedIds.removeAll(filteredFiles.map { it.id }.toSet())
+                                } else {
+                                    filteredFiles.forEach { item ->
+                                        if (item.id !in selectedIds) selectedIds.add(item.id)
+                                    }
+                                }
+                            }) {
+                                Icon(
+                                    Icons.Default.SelectAll,
+                                    contentDescription = if (allVisibleSelected) AppLanguage.text(context, "Deselect all visible", "إلغاء تحديد الكل") else AppLanguage.text(context, "Select all visible", "تحديد الكل"),
+                                    tint = Color.White
+                                )
+                            }
+                        }
                         if (currentTab == 4) {
                             IconButton(onClick = {
                                 val updated = vaultFiles.map {
@@ -510,6 +528,16 @@ fun SecretVaultScreen(
                         }
                     } else {
                         if (currentTab in 0..2 || currentTab == 4) {
+                            IconButton(
+                                onClick = { selectedIds.addAll(filteredFiles.map { it.id }) },
+                                enabled = filteredFiles.isNotEmpty()
+                            ) {
+                                Icon(
+                                    Icons.Default.SelectAll,
+                                    contentDescription = AppLanguage.text(context, "Select all", "تحديد الكل"),
+                                    tint = if (filteredFiles.isNotEmpty()) Color(0xFF69F0AE) else Color.Gray
+                                )
+                            }
                             IconButton(onClick = {
                                 isGridView = !isGridView
                                 vaultViewPrefs.edit().putBoolean("grid_view", isGridView).apply()
