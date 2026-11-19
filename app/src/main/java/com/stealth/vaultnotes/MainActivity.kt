@@ -564,12 +564,12 @@ fun StealthNotesApp(
                                     val recovery = withContext(Dispatchers.IO) {
                                         runCatching { VaultTransferManager.recoverPending(context) }
                                     }
-                                    if (recovery.isSuccess && activityLifecycleCanContinue(activity)) {
+                                    if (recovery.isSuccess && activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                                         onVaultUnlockProgressChange(false)
                                         searchQuery = ""
                                         focusManager.clearFocus()
                                         onVaultStateChange(true)
-                                    } else if (recovery.isFailure && activityLifecycleCanContinue(activity)) {
+                                    } else if (recovery.isFailure && activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                                         onVaultUnlockProgressChange(false)
                                         SecurityCrypto.lockVaultSession(context)
                                         Toast.makeText(
