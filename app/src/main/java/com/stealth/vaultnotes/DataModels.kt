@@ -352,6 +352,64 @@ object StorageRepository {
         }
     }
 
+    /**
+     * Reads and writes the vault index using a transfer-scoped key captured before
+     * the interactive session was locked. The normal UI APIs remain session-gated.
+     */
+    @Synchronized
+    internal fun loadVaultFilesForTransfer(
+        context: Context,
+        key: javax.crypto.SecretKey
+    ): MutableList<VaultFileItem>? {
+        if (vaultIndexUnreadable) return null
+        val file = vaultIndexFile(context)
+        recoverAtomicBackup(file)
+        if (!file.exists()) {
+            return if (File(file.parentFile, file.name + ".bak").exists()) null else mutableListOf()
+        }
+        return try {
+            val blobDir = File(context.filesDir, "vault_blobs")
+            check(blobDir.exists() && blobDir.isDirectory && blobDir.canRead()) {
+                "Vault blob directory is not readable"
+            }
+            val json = String(
+                SecurityCrypto.decryptBytesForTransfer(key, file.readBytes()),
+                Charsets.UTF_8
+            )
+            val type = object : TypeToken<MutableList<VaultFileItem>>() {}.type
+            val list: MutableList<VaultFileItem> = gson.fromJson(json, type)
+                ?: throw IllegalStateException("Vault index is empty or invalid")
+            list.forEach { item ->
+                require(item.encryptedFileName.isNotBlank() &&
+                    !item.encryptedFileName.contains('/') &&
+                    !item.encryptedFileName.contains('\\')) {
+                    "Vault index contains an unsafe blob filename"
+                }
+            }
+            list
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    @Synchronized
+    internal fun saveVaultFilesForTransfer(
+        context: Context,
+        files: List<VaultFileItem>,
+        key: javax.crypto.SecretKey
+    ): Boolean {
+        if (vaultIndexUnreadable) return false
+        return try {
+            val encrypted = SecurityCrypto.encryptBytesForTransfer(
+                key,
+                gson.toJson(files).toByteArray(Charsets.UTF_8)
+            )
+            writeAtomically(vaultIndexFile(context), encrypted)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun vaultFoldersFile(context: Context, mediaType: VaultMediaType): File =
         File(context.filesDir, "vault_folders_${mediaType.name.lowercase(Locale.ROOT)}.enc")
 
