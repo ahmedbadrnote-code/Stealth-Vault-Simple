@@ -160,12 +160,16 @@ object VaultTransferManager {
      */
     fun recoverPending(context: Context) {
         val key = SecurityCrypto.activeTransferKey(context)
+        val journalFiles = context.filesDir.listFiles()?.filter {
+            it.name.startsWith(JOURNAL_PREFIX) && it.name.endsWith(".enc")
+        }.orEmpty()
+        // A missing index is not proof that an export committed. Preserve every
+        // referenced blob and journal rather than risking deletion after index loss.
+        if (!File(context.filesDir, "vault_index.enc").exists() && journalFiles.isNotEmpty()) return
         val index = StorageRepository.loadVaultFilesForTransfer(context, key)
             ?: throw IllegalStateException("Vault index could not be read safely")
         val blobDir = StorageRepository.getVaultBlobDir(context)
-        context.filesDir.listFiles()?.filter {
-            it.name.startsWith(JOURNAL_PREFIX) && it.name.endsWith(".enc")
-        }?.forEach { file ->
+        journalFiles.forEach { file ->
             val journal = try {
                 readJournal(file, key)
             } catch (_: Exception) {
