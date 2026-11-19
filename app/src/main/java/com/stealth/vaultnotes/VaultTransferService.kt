@@ -447,9 +447,15 @@ class VaultTransferService : Service() {
             val latestIndex = StorageRepository.loadVaultFilesForTransfer(this, key)
                 ?: throw IllegalStateException("Vault index is unreadable")
             if (latestIndex.none { it.id == item.id }) {
-                entry.state = "COMMITTED"
-                VaultTransferManager.writeJournal(journalFile, journal, key)
-                completed++
+                val orphanBlob = File(StorageRepository.getVaultBlobDir(this), item.encryptedFileName)
+                if (orphanBlob.exists() && !orphanBlob.delete() && orphanBlob.exists()) {
+                    entry.state = "OUTPUT_COMPLETE"
+                    VaultTransferManager.writeJournal(journalFile, journal, key)
+                } else {
+                    entry.state = "COMMITTED"
+                    VaultTransferManager.writeJournal(journalFile, journal, key)
+                    completed++
+                }
                 return@forEachIndexed
             }
 
