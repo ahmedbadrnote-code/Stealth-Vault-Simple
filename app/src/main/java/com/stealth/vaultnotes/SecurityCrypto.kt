@@ -23,6 +23,7 @@ import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
+import java.util.concurrent.ConcurrentHashMap
 
 object SecurityCrypto {
     private const val PREFS_NAME = "stealth_vault_prefs"
@@ -43,6 +44,54 @@ object SecurityCrypto {
     private var sessionGeneration = 0L
 
     private val sessionLock = Any()
+    private val transferKeys = ConcurrentHashMap<String, SecretKey>()
+
+    /**
+     * Captures a narrowly scoped in-memory key reference for a transfer explicitly
+     * started while the vault is unlocked. Locking the UI still clears the normal
+     * session key; only this already-authorized transfer retains its own reference.
+     */
+    internal fun captureTransferKey(context: Context, transferId: String): SecretKey {
+        require(transferId.isNotBlank())
+        val key = synchronized(sessionLock) {
+            check(vaultSessionUnlocked) { "Vault session is locked" }
+            cachedAesKey ?: throw IllegalStateException("Vault key is not ready for transfer")
+        }
+        check(transferKeys.putIfAbsent(transferId, key) == null) {
+            "Transfer key already exists"
+        }
+        return key
+    }
+
+    internal fun transferKey(transferId: String): SecretKey? = transferKeys[transferId]
+
+    internal fun finishTransferKey(transferId: String) {
+        transferKeys.remove(transferId)
+    }
+
+    fun hasActiveTransfers(): Boolean = transferKeys.isNotEmpty()
+
+    fun isVaultSessionUnlocked(): Boolean = synchronized(sessionLock) {
+        vaultSessionUnlocked
+    }
+
+    internal fun activeTransferKey(context: Context): SecretKey = synchronized(sessionLock) {
+        check(vaultSessionUnlocked) { "Vault session is locked" }
+        cachedAesKey ?: throw IllegalStateException("Vault key is not ready")
+    }
+
+    internal fun encryptBytesForTransfer(key: SecretKey, plain: ByteArray): ByteArray {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        return cipher.iv + cipher.doFinal(plain)
+    }
+
+    internal fun decryptBytesForTransfer(key: SecretKey, encrypted: ByteArray): ByteArray {
+        require(encrypted.size > 12) { "Encrypted transfer data is incomplete" }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, encrypted.copyOfRange(0, 12)))
+        return cipher.doFinal(encrypted.copyOfRange(12, encrypted.size))
+    }
 
     fun isFirstRun(context: Context): Boolean =
         !context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).contains(KEY_PASS_HASH)
@@ -296,7 +345,8 @@ object SecurityCrypto {
         context: Context,
         uri: Uri,
         mediaType: VaultMediaType,
-        subFolder: String
+        subFolder: String,
+        transferPrefix: String? = null
     ): VaultFileItem? {
         return try {
             val resolver = context.contentResolver
@@ -326,7 +376,7 @@ object SecurityCrypto {
                     VaultMediaType.DOCUMENT -> "application/pdf"
                 }
             }
-            val filename = UUID.randomUUID().toString() + "." + extension
+            val filename = (transferPrefix ?: "") + UUID.randomUUID().toString() + "." + extension
             val dir = StorageRepository.getVaultBlobDir(context)
             check(dir.exists() || dir.mkdirs()) { "Unable to create vault storage" }
             val target = File(dir, filename)
@@ -443,6 +493,51 @@ object SecurityCrypto {
         }
     }
 
+
+    /**
+     * Restores one explicitly selected item for an already-authorized background
+     * transfer. This intentionally does not consult the interactive vault session:
+     * the service holds the transfer-scoped key captured before the UI was locked.
+     */
+    internal fun restoreFileToOutputStreamForTransfer(
+        context: Context,
+        item: VaultFileItem,
+        output: java.io.OutputStream,
+        key: SecretKey
+    ) {
+        val source = File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName)
+        require(source.isFile) { "Vault file is missing" }
+        FileInputStream(source).use { input ->
+            val buffer = ByteArray(64 * 1024)
+            if (item.isEncrypted == false) {
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (count == 0) continue
+                    output.write(buffer, 0, count)
+                }
+                output.flush()
+                return
+            }
+
+            require(source.length() >= 28L) { "Encrypted vault file is incomplete" }
+            val iv = ByteArray(12)
+            java.io.DataInputStream(input).readFully(iv)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (count == 0) continue
+                val plain = cipher.update(buffer, 0, count)
+                if (plain != null && plain.isNotEmpty()) output.write(plain)
+            }
+            val finalBytes = cipher.doFinal()
+            if (finalBytes.isNotEmpty()) output.write(finalBytes)
+            output.flush()
+        }
+    }
+
     fun decryptFileToTempCache(context: Context, item: VaultFileItem): File? {
         return try {
             val sessionToken = synchronized(sessionLock) {
@@ -523,6 +618,9 @@ object SecurityCrypto {
 
     fun lockVaultSession(context: Context) {
         synchronized(sessionLock) {
+            // Deliberately retain transferKeys: each entry is an in-memory capability
+            // for a specific transfer the user started before locking. The service
+            // removes it on completion or destruction; no new transfer can capture it.
             vaultSessionUnlocked = false
             sessionGeneration++
             cachedAesKey = null

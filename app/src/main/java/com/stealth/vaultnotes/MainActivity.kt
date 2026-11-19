@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
     private val appLanguageState = mutableStateOf(AppLanguage.ARABIC)
     private val pendingOpenNoteId = mutableStateOf<String?>(null)
     @Volatile private var isVaultPickerActive = false
+    @Volatile private var isVaultUnlockInProgress = false
 
     override fun attachBaseContext(newBase: Context) {
         originalBaseContext = newBase
@@ -108,6 +109,8 @@ class MainActivity : ComponentActivity() {
                         isVaultOpenState.value = open
                     },
                     onVaultPickerStateChange = { isVaultPickerActive = it },
+                    onVaultUnlockProgressChange = { isVaultUnlockInProgress = it },
+                    isVaultUnlockProgressActive = { isVaultUnlockInProgress },
                     openNoteId = pendingOpenNoteId.value,
                     onOpenNoteHandled = { handledId ->
                         if (pendingOpenNoteId.value == handledId) pendingOpenNoteId.value = null
@@ -152,9 +155,10 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        if (isVaultOpenState.value && !isChangingConfigurations && !isVaultPickerActive) {
+        if ((isVaultOpenState.value || isVaultUnlockInProgress) && !isChangingConfigurations && !isVaultPickerActive) {
             SecurityCrypto.lockVaultSession(this)
             isVaultOpenState.value = false
+            isVaultUnlockInProgress = false
         }
         // Change launcher aliases only after this Activity has left the foreground.
         // Disabling the alias that launched the currently visible Activity can make
@@ -180,6 +184,8 @@ fun StealthNotesApp(
     isVaultOpen: Boolean,
     onVaultStateChange: (Boolean) -> Unit,
     onVaultPickerStateChange: (Boolean) -> Unit,
+    onVaultUnlockProgressChange: (Boolean) -> Unit,
+    isVaultUnlockProgressActive: () -> Boolean,
     openNoteId: String?,
     onOpenNoteHandled: (String) -> Unit
 ) {
@@ -534,6 +540,9 @@ fun StealthNotesApp(
                         val candidate = searchQuery.trim()
                         if (candidate.isNotEmpty()) {
                             scope.launch {
+                                // Mark verification/recovery as an unlock transition so
+                                // Power/Home cannot leave a live session key behind.
+                                onVaultUnlockProgressChange(true)
                                 val verification = withContext(Dispatchers.IO) {
                                     try {
                                         SecurityCrypto.verifyPasscode(context, candidate) to null
@@ -541,11 +550,53 @@ fun StealthNotesApp(
                                         false to e
                                     }
                                 }
-                                if (verification.first) {
-                                    searchQuery = ""
+                                if (!isVaultUnlockProgressActive() || !activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                                    SecurityCrypto.lockVaultSession(context)
+                                    onVaultUnlockProgressChange(false)
+                                    return@launch
+                                }
+                                if (verification.first && SecurityCrypto.hasActiveTransfers()) {
+                                    // Do not allow concurrent vault edits while the service is
+                                    // committing a transfer against the encrypted index.
+                                    SecurityCrypto.lockVaultSession(context)
+                                    onVaultUnlockProgressChange(false)
+                                    Toast.makeText(
+                                        context,
+                                        AppLanguage.text(
+                                            context,
+                                            "A background file transfer is still running. Please wait until it finishes before reopening the vault.",
+                                            "ما زالت عملية نقل ملفات تعمل في الخلفية. انتظر حتى تنتهي قبل فتح الخزنة مرة أخرى."
+                                        ),
+                                        Toast.LENGTH_LONG
+                                    ).show()
                                     focusManager.clearFocus()
-                                    onVaultStateChange(true)
+                                } else if (verification.first) {
+                                    val recovery = withContext(Dispatchers.IO) {
+                                        runCatching { VaultTransferManager.recoverPending(context) }
+                                    }
+                                    if (recovery.isSuccess && isVaultUnlockProgressActive() && activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                                        onVaultUnlockProgressChange(false)
+                                        searchQuery = ""
+                                        focusManager.clearFocus()
+                                        onVaultStateChange(true)
+                                    } else {
+                                        SecurityCrypto.lockVaultSession(context)
+                                        onVaultUnlockProgressChange(false)
+                                        if (recovery.isFailure && isVaultUnlockProgressActive() && activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                                            Toast.makeText(
+                                                context,
+                                                AppLanguage.text(
+                                                    context,
+                                                    "The vault could not safely recover an interrupted file transfer. Your stored files were not intentionally removed.",
+                                                    "تعذّر استرداد عملية نقل ملفات متوقفة بأمان. لم يتم حذف الملفات المخزنة عمدًا."
+                                                ),
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            focusManager.clearFocus()
+                                        }
+                                    }
                                 } else {
+                                    onVaultUnlockProgressChange(false)
                                     if (verification.second != null) {
                                         Toast.makeText(
                                             context,
