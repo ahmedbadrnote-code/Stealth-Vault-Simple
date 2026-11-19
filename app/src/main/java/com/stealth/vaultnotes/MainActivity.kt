@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
     private val appLanguageState = mutableStateOf(AppLanguage.ARABIC)
     private val pendingOpenNoteId = mutableStateOf<String?>(null)
     @Volatile private var isVaultPickerActive = false
+    @Volatile private var isVaultUnlockInProgress = false
 
     override fun attachBaseContext(newBase: Context) {
         originalBaseContext = newBase
@@ -108,6 +109,7 @@ class MainActivity : ComponentActivity() {
                         isVaultOpenState.value = open
                     },
                     onVaultPickerStateChange = { isVaultPickerActive = it },
+                    onVaultUnlockProgressChange = { isVaultUnlockInProgress = it },
                     openNoteId = pendingOpenNoteId.value,
                     onOpenNoteHandled = { handledId ->
                         if (pendingOpenNoteId.value == handledId) pendingOpenNoteId.value = null
@@ -152,9 +154,10 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        if (isVaultOpenState.value && !isChangingConfigurations && !isVaultPickerActive) {
+        if ((isVaultOpenState.value || isVaultUnlockInProgress) && !isChangingConfigurations && !isVaultPickerActive) {
             SecurityCrypto.lockVaultSession(this)
             isVaultOpenState.value = false
+            isVaultUnlockInProgress = false
         }
         // Change launcher aliases only after this Activity has left the foreground.
         // Disabling the alias that launched the currently visible Activity can make
@@ -180,6 +183,7 @@ fun StealthNotesApp(
     isVaultOpen: Boolean,
     onVaultStateChange: (Boolean) -> Unit,
     onVaultPickerStateChange: (Boolean) -> Unit,
+    onVaultUnlockProgressChange: (Boolean) -> Unit,
     openNoteId: String?,
     onOpenNoteHandled: (String) -> Unit
 ) {
@@ -556,14 +560,17 @@ fun StealthNotesApp(
                                     ).show()
                                     focusManager.clearFocus()
                                 } else if (verification.first) {
+                                    onVaultUnlockProgressChange(true)
                                     val recovery = withContext(Dispatchers.IO) {
                                         runCatching { VaultTransferManager.recoverPending(context) }
                                     }
-                                    if (recovery.isSuccess) {
+                                    if (recovery.isSuccess && activityLifecycleCanContinue(activity)) {
+                                        onVaultUnlockProgressChange(false)
                                         searchQuery = ""
                                         focusManager.clearFocus()
                                         onVaultStateChange(true)
-                                    } else {
+                                    } else if (recovery.isFailure && activityLifecycleCanContinue(activity)) {
+                                        onVaultUnlockProgressChange(false)
                                         SecurityCrypto.lockVaultSession(context)
                                         Toast.makeText(
                                             context,
