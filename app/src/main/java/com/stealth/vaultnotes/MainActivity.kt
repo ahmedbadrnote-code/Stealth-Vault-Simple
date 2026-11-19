@@ -538,6 +538,9 @@ fun StealthNotesApp(
                         val candidate = searchQuery.trim()
                         if (candidate.isNotEmpty()) {
                             scope.launch {
+                                // Mark verification/recovery as an unlock transition so
+                                // Power/Home cannot leave a live session key behind.
+                                onVaultUnlockProgressChange(true)
                                 val verification = withContext(Dispatchers.IO) {
                                     try {
                                         SecurityCrypto.verifyPasscode(context, candidate) to null
@@ -545,10 +548,16 @@ fun StealthNotesApp(
                                         false to e
                                     }
                                 }
+                                if (!activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                                    SecurityCrypto.lockVaultSession(context)
+                                    onVaultUnlockProgressChange(false)
+                                    return@launch
+                                }
                                 if (verification.first && SecurityCrypto.hasActiveTransfers()) {
                                     // Do not allow concurrent vault edits while the service is
                                     // committing a transfer against the encrypted index.
                                     SecurityCrypto.lockVaultSession(context)
+                                    onVaultUnlockProgressChange(false)
                                     Toast.makeText(
                                         context,
                                         AppLanguage.text(
@@ -560,7 +569,6 @@ fun StealthNotesApp(
                                     ).show()
                                     focusManager.clearFocus()
                                 } else if (verification.first) {
-                                    onVaultUnlockProgressChange(true)
                                     val recovery = withContext(Dispatchers.IO) {
                                         runCatching { VaultTransferManager.recoverPending(context) }
                                     }
@@ -569,21 +577,24 @@ fun StealthNotesApp(
                                         searchQuery = ""
                                         focusManager.clearFocus()
                                         onVaultStateChange(true)
-                                    } else if (recovery.isFailure && activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
-                                        onVaultUnlockProgressChange(false)
+                                    } else {
                                         SecurityCrypto.lockVaultSession(context)
-                                        Toast.makeText(
-                                            context,
-                                            AppLanguage.text(
+                                        onVaultUnlockProgressChange(false)
+                                        if (recovery.isFailure && activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                                            Toast.makeText(
                                                 context,
-                                                "The vault could not safely recover an interrupted file transfer. Your stored files were not intentionally removed.",
-                                                "تعذّر استرداد عملية نقل ملفات متوقفة بأمان. لم يتم حذف الملفات المخزنة عمدًا."
-                                            ),
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                        focusManager.clearFocus()
+                                                AppLanguage.text(
+                                                    context,
+                                                    "The vault could not safely recover an interrupted file transfer. Your stored files were not intentionally removed.",
+                                                    "تعذّر استرداد عملية نقل ملفات متوقفة بأمان. لم يتم حذف الملفات المخزنة عمدًا."
+                                                ),
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            focusManager.clearFocus()
+                                        }
                                     }
                                 } else {
+                                    onVaultUnlockProgressChange(false)
                                     if (verification.second != null) {
                                         Toast.makeText(
                                             context,
