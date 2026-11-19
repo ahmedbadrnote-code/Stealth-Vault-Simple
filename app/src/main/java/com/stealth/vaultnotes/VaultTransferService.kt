@@ -287,6 +287,7 @@ class VaultTransferService : Service() {
 
         val key = SecurityCrypto.transferKey(transferId)
         if (key == null) {
+            sendTransferFinished(false, "TRANSFER")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(startId)
             return START_NOT_STICKY
@@ -302,6 +303,7 @@ class VaultTransferService : Service() {
             }
         } catch (_: Exception) {
             SecurityCrypto.finishTransferKey(transferId)
+            sendTransferFinished(false, "TRANSFER")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(startId)
             return START_NOT_STICKY
@@ -325,12 +327,7 @@ class VaultTransferService : Service() {
             } finally {
                 SecurityCrypto.finishTransferKey(transferId)
                 releaseTransferWakeLock()
-                sendBroadcast(
-                    Intent(ACTION_FINISHED)
-                        .setPackage(packageName)
-                        .putExtra("success", success)
-                        .putExtra("operation", operation)
-                )
+                sendTransferFinished(success, operation)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf(startId)
             }
@@ -449,6 +446,16 @@ class VaultTransferService : Service() {
                 )
             }
         }
+    }
+
+
+    private fun sendTransferFinished(success: Boolean, operation: String) {
+        sendBroadcast(
+            Intent(ACTION_FINISHED)
+                .setPackage(packageName)
+                .putExtra("success", success)
+                .putExtra("operation", operation)
+        )
     }
 
     private fun releaseTransferWakeLock() {
