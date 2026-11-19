@@ -98,6 +98,7 @@ class MainActivity : ComponentActivity() {
                 MaterialTheme(colorScheme = darkColorScheme()) {
                     StealthNotesApp(
                     activity = this@MainActivity,
+                    printContext = originalBaseContext ?: this@MainActivity,
                     isVaultOpen = isVaultOpenState.value,
                     onVaultStateChange = { open ->
                         if (!open) SecurityCrypto.lockVaultSession(this)
@@ -167,6 +168,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun StealthNotesApp(
     activity: ComponentActivity,
+    printContext: Context,
     isVaultOpen: Boolean,
     onVaultStateChange: (Boolean) -> Unit,
     onVaultPickerStateChange: (Boolean) -> Unit,
@@ -383,7 +385,7 @@ fun StealthNotesApp(
     activeNoteForEdit?.let { note ->
         NoteEditorScreen(
             activity = activity,
-            printContext = originalBaseContext ?: activity,
+            printContext = printContext,
             note = note,
             onSave = { updated ->
                 val list = publicNotes.toMutableList()
