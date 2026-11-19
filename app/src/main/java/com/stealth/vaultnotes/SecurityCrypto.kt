@@ -618,6 +618,9 @@ object SecurityCrypto {
 
     fun lockVaultSession(context: Context) {
         synchronized(sessionLock) {
+            // Deliberately retain transferKeys: each entry is an in-memory capability
+            // for a specific transfer the user started before locking. The service
+            // removes it on completion or destruction; no new transfer can capture it.
             vaultSessionUnlocked = false
             sessionGeneration++
             cachedAesKey = null
