@@ -111,6 +111,7 @@ object VaultTransferManager {
         ))
     }
 
+    @Synchronized
     private fun start(context: Context, journal: VaultTransferJournal): Boolean {
         // The service is intentionally single-transfer: this keeps one scoped key,
         // one journal, and one foreground lifecycle active at a time.
