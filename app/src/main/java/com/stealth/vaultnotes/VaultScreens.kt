@@ -120,6 +120,7 @@ class SafOpenMultipleDocumentsContract : ActivityResultContract<Array<String>, L
 @Composable
 fun SecretVaultScreen(
     activity: ComponentActivity,
+    printContext: Context,
     onExitVault: () -> Unit,
     onPickerStateChange: (Boolean) -> Unit
 ) {
@@ -193,7 +194,7 @@ fun SecretVaultScreen(
             }
             val targetFolder = currentSubFolder
             isBusy = true
-            busyMessage = "Moving ${uris.size} file(s) into the vault..."
+            busyMessage = AppLanguage.text(context, "Moving ${uris.size} file(s) into the vault...", "جارٍ نقل ${uris.size} ملفًا إلى الخزنة...")
             scope.launch {
                 val updated = vaultFiles.toMutableList()
                 val imported = mutableListOf<Pair<Uri, VaultFileItem>>()
@@ -225,20 +226,34 @@ fun SecretVaultScreen(
                     }
                     val originalsRemain = imported.size - deletedOriginals
                     val failedImports = uris.size - imported.size
-                    val message = buildString {
-                        append("${imported.size}/${uris.size} file(s) moved into the vault.")
-                        if (originalsRemain > 0) {
-                            append(" ${originalsRemain} original file(s) could not be deleted and remain in their original location.")
-                        } else if (imported.isNotEmpty()) {
-                            append(" The selected originals were removed from their source location.")
+                    val message = if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) {
+                        buildString {
+                            append("تم نقل ${imported.size} من أصل ${uris.size} ملفًا إلى الخزنة.")
+                            if (originalsRemain > 0) {
+                                append(" تعذّر حذف ${originalsRemain} نسخة أصلية، وما زالت في موقعها الأصلي.")
+                            } else if (imported.isNotEmpty()) {
+                                append(" تمت إزالة النسخ الأصلية المحددة من موقعها.")
+                            }
+                            if (failedImports > 0) {
+                                append(" تعذّر استيراد ${failedImports} ملفًا محددًا؛ وتم الاحتفاظ بنسخه الأصلية.")
+                            }
                         }
-                        if (failedImports > 0) {
-                            append(" ${failedImports} selected file(s) could not be imported; their originals were kept.")
+                    } else {
+                        buildString {
+                            append("${imported.size}/${uris.size} file(s) moved into the vault.")
+                            if (originalsRemain > 0) {
+                                append(" ${originalsRemain} original file(s) could not be deleted and remain in their original location.")
+                            } else if (imported.isNotEmpty()) {
+                                append(" The selected originals were removed from their source location.")
+                            }
+                            if (failedImports > 0) {
+                                append(" ${failedImports} selected file(s) could not be imported; their originals were kept.")
+                            }
                         }
                     }
                     Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                 } else {
-                    Toast.makeText(context, "Could not import files. Originals were kept.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, AppLanguage.text(context, "Could not import files. Originals were kept.", "تعذّر استيراد الملفات. تم الاحتفاظ بالنسخ الأصلية."), Toast.LENGTH_LONG).show()
                 }
                 isBusy = false
             }
@@ -270,7 +285,7 @@ fun SecretVaultScreen(
         pendingRestoreItems = emptyList()
         if (treeUri != null && itemsToRestore.isNotEmpty()) {
             isBusy = true
-            busyMessage = "Restoring ${itemsToRestore.size} file(s)..."
+            busyMessage = AppLanguage.text(context, "Restoring ${itemsToRestore.size} file(s)...", "جارٍ استعادة ${itemsToRestore.size} ملفًا...")
             scope.launch {
                 val docDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
                 val updated = vaultFiles.toMutableList()
@@ -309,9 +324,9 @@ fun SecretVaultScreen(
 
                 if (savedOk) {
                     vaultFiles = updated
-                    Toast.makeText(context, "$restoredCount file(s) restored to your device ✅", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, AppLanguage.text(context, "$restoredCount file(s) restored to your device ✅", "تمت استعادة $restoredCount ملفًا إلى جهازك ✅"), Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "Could not update vault records. Any files already copied remain on your device, and their originals remain in the vault.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, AppLanguage.text(context, "Could not update vault records. Any files already copied remain on your device, and their originals remain in the vault.", "تعذّر تحديث سجلات الخزنة. الملفات التي نُسخت موجودة على جهازك، وما زالت أصولها داخل الخزنة."), Toast.LENGTH_LONG).show()
                 }
                 selectedIds.clear()
                 isBusy = false
@@ -328,6 +343,7 @@ fun SecretVaultScreen(
     editingSecretNote?.let { secretNote ->
         NoteEditorScreen(
             activity = activity,
+            printContext = printContext,
             note = secretNote,
             onSave = { saved ->
                 val list = secretNotes.toMutableList()
@@ -337,7 +353,7 @@ fun SecretVaultScreen(
                 if (StorageRepository.saveSecretNotes(context, list)) {
                     secretNotes = list
                 } else {
-                    Toast.makeText(context, "Could not save private note.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, AppLanguage.text(context, "Could not save private note.", "تعذّر حفظ الملاحظة الخاصة."), Toast.LENGTH_LONG).show()
                     throw IllegalStateException("Private note save failed")
                 }
             },
@@ -426,10 +442,10 @@ fun SecretVaultScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1A1A1A)),
                 title = {
                     val headerTitle = when {
-                        selectedIds.isNotEmpty() -> "${selectedIds.size} selected"
-                        currentTab == 4 -> "Vault Trash (30d)"
-                        currentTab == 3 && showSecretTrash -> "Hidden Notes Trash"
-                        else -> "Private Vault 🔒"
+                        selectedIds.isNotEmpty() -> AppLanguage.text(context, "${selectedIds.size} selected", "تم تحديد ${selectedIds.size}")
+                        currentTab == 4 -> AppLanguage.text(context, "Vault Trash (30d)", "محذوفات الخزنة (30 يومًا)")
+                        currentTab == 3 && showSecretTrash -> AppLanguage.text(context, "Hidden Notes Trash", "محذوفات الملاحظات المخفية")
+                        else -> AppLanguage.text(context, "Private Vault 🔒", "الخزنة الخاصة 🔒")
                     }
                     Text(headerTitle, color = Color(0xFF69F0AE), fontWeight = FontWeight.Bold, maxLines = 1)
                 },
@@ -443,14 +459,14 @@ fun SecretVaultScreen(
                                 if (StorageRepository.saveVaultFiles(context, updated)) {
                                     vaultFiles = updated
                                     selectedIds.clear()
-                                    Toast.makeText(context, "Restored to vault ✅", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, AppLanguage.text(context, "Restored to vault ✅", "تمت الاستعادة إلى الخزنة ✅"), Toast.LENGTH_SHORT).show()
                                 }
                             }) {
-                                Icon(Icons.Default.Restore, contentDescription = "Restore to vault", tint = Color(0xFF69F0AE))
+                                Icon(Icons.Default.Restore, contentDescription = AppLanguage.text(context, "Restore to vault", "استعادة إلى الخزنة"), tint = Color(0xFF69F0AE))
                             }
                         } else {
                             IconButton(onClick = { showMoveFolderDialog = true }) {
-                                Icon(Icons.Default.DriveFileMove, contentDescription = "Move to folder", tint = Color(0xFFFFD54F))
+                                Icon(Icons.Default.DriveFileMove, contentDescription = AppLanguage.text(context, "Move to folder", "نقل إلى مجلد"), tint = Color(0xFFFFD54F))
                             }
                         }
                         IconButton(onClick = {
@@ -458,7 +474,7 @@ fun SecretVaultScreen(
                             onPickerStateChange(true)
                             launchRestorePicker()
                         }) {
-                            Icon(Icons.Default.Unarchive, contentDescription = "Restore to device", tint = Color(0xFF40C4FF))
+                            Icon(Icons.Default.Unarchive, contentDescription = AppLanguage.text(context, "Restore to device", "استعادة إلى الجهاز"), tint = Color(0xFF40C4FF))
                         }
                         IconButton(onClick = {
                             val selectedItems = vaultFiles.filter { it.id in selectedIds }
@@ -474,23 +490,23 @@ fun SecretVaultScreen(
                                         if (blob.exists() && !blob.delete() && blob.exists()) cleanupFailures++
                                     }
                                     if (cleanupFailures > 0) {
-                                        Toast.makeText(context, "$cleanupFailures file(s) were removed from the vault index but could not be physically deleted.", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, AppLanguage.text(context, "$cleanupFailures file(s) were removed from the vault index but could not be physically deleted.", "تمت إزالة $cleanupFailures ملفًا من فهرس الخزنة، لكن تعذّر حذفها فعليًا."), Toast.LENGTH_LONG).show()
                                     }
                                 }
                                 vaultFiles = updated.toMutableList()
                                 selectedIds.clear()
                             } else {
-                                Toast.makeText(context, "Could not update vault.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, AppLanguage.text(context, "Could not update vault.", "تعذّر تحديث الخزنة."), Toast.LENGTH_LONG).show()
                             }
                         }) {
                             Icon(
                                 if (currentTab == 4) Icons.Default.DeleteForever else Icons.Default.Delete,
-                                contentDescription = if (currentTab == 4) "Delete permanently" else "Move to trash",
+                                contentDescription = if (currentTab == 4) AppLanguage.text(context, "Delete permanently", "حذف نهائي") else AppLanguage.text(context, "Move to trash", "نقل إلى سلة المحذوفات"),
                                 tint = Color(0xFFFF5252)
                             )
                         }
                         IconButton(onClick = { selectedIds.clear() }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear selection", tint = Color.White)
+                            Icon(Icons.Default.Close, contentDescription = AppLanguage.text(context, "Clear selection", "إلغاء التحديد"), tint = Color.White)
                         }
                     } else {
                         if (currentTab in 0..2 || currentTab == 4) {
@@ -500,21 +516,21 @@ fun SecretVaultScreen(
                             }) {
                                 Icon(
                                     if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
-                                    contentDescription = if (isGridView) "List view" else "Grid view",
+                                    contentDescription = if (isGridView) AppLanguage.text(context, "List view", "عرض القائمة") else AppLanguage.text(context, "Grid view", "عرض الشبكة"),
                                     tint = Color.White
                                 )
                             }
                         }
                         if (currentTab == 4 || (currentTab == 3 && showSecretTrash)) {
                             IconButton(onClick = { showEmptyTrashDialog = true }) {
-                                Icon(Icons.Default.DeleteForever, contentDescription = "Empty trash", tint = Color(0xFFFF5252))
+                                Icon(Icons.Default.DeleteForever, contentDescription = AppLanguage.text(context, "Empty trash", "إفراغ سلة المحذوفات"), tint = Color(0xFFFF5252))
                             }
                         }
                         if (currentTab == 3) {
                             IconButton(onClick = { showSecretTrash = !showSecretTrash }) {
                                 Icon(
                                     Icons.Default.DeleteSweep,
-                                    contentDescription = "Private notes trash",
+                                    contentDescription = AppLanguage.text(context, "Private notes trash", "محذوفات الملاحظات الخاصة"),
                                     tint = if (showSecretTrash) Color(0xFFFF5252) else Color.White
                                 )
                             }
@@ -526,19 +542,19 @@ fun SecretVaultScreen(
                                 SortOption.SIZE_DESC -> SortOption.DATE_DESC
                             }
                             val label = when (sortOption) {
-                                SortOption.DATE_DESC -> "Date Added"
-                                SortOption.NAME_ASC -> "Name"
-                                SortOption.SIZE_DESC -> "Size"
+                                SortOption.DATE_DESC -> AppLanguage.text(context, "Date Added", "تاريخ الإضافة")
+                                SortOption.NAME_ASC -> AppLanguage.text(context, "Name", "الاسم")
+                                SortOption.SIZE_DESC -> AppLanguage.text(context, "Size", "الحجم")
                             }
-                            Toast.makeText(context, "Sorted by: $label", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, AppLanguage.text(context, "Sorted by: $label", "الترتيب حسب: $label"), Toast.LENGTH_SHORT).show()
                         }) {
-                            Icon(Icons.Default.Sort, contentDescription = "Sort", tint = Color.White)
+                            Icon(Icons.Default.Sort, contentDescription = AppLanguage.text(context, "Sort", "ترتيب"), tint = Color.White)
                         }
                         if (currentTab != 3) {
                             IconButton(onClick = { currentTab = if (currentTab == 4) 0 else 4 }) {
                                 Icon(
                                     Icons.Default.AutoDelete,
-                                    contentDescription = "Vault trash",
+                                    contentDescription = AppLanguage.text(context, "Vault trash", "محذوفات الخزنة"),
                                     tint = if (currentTab == 4) Color(0xFFFF5252) else Color.Gray
                                 )
                             }
@@ -547,7 +563,7 @@ fun SecretVaultScreen(
                             SecurityCrypto.lockVaultSession(context)
                             onExitVault()
                         }) {
-                            Icon(Icons.Default.Lock, contentDescription = "Lock vault", tint = Color(0xFFFF5252))
+                            Icon(Icons.Default.Lock, contentDescription = AppLanguage.text(context, "Lock vault", "قفل الخزنة"), tint = Color(0xFFFF5252))
                         }
                     }
                 }
@@ -555,10 +571,10 @@ fun SecretVaultScreen(
         },
         bottomBar = {
             NavigationBar(containerColor = Color(0xFF1A1A1A)) {
-                NavigationBarItem(selected = currentTab == 0, onClick = { currentTab = 0 }, icon = { Icon(Icons.Default.PhotoLibrary, null) }, label = { Text("Photos") })
-                NavigationBarItem(selected = currentTab == 1, onClick = { currentTab = 1 }, icon = { Icon(Icons.Default.VideoLibrary, null) }, label = { Text("Videos") })
-                NavigationBarItem(selected = currentTab == 2, onClick = { currentTab = 2 }, icon = { Icon(Icons.Default.FolderShared, null) }, label = { Text("Documents") })
-                NavigationBarItem(selected = currentTab == 3, onClick = { currentTab = 3 }, icon = { Icon(Icons.Default.EnhancedEncryption, null) }, label = { Text("Hidden Notes") })
+                NavigationBarItem(selected = currentTab == 0, onClick = { currentTab = 0 }, icon = { Icon(Icons.Default.PhotoLibrary, null) }, label = { Text(AppLanguage.text(context, "Photos", "الصور")) })
+                NavigationBarItem(selected = currentTab == 1, onClick = { currentTab = 1 }, icon = { Icon(Icons.Default.VideoLibrary, null) }, label = { Text(AppLanguage.text(context, "Videos", "الفيديوهات")) })
+                NavigationBarItem(selected = currentTab == 2, onClick = { currentTab = 2 }, icon = { Icon(Icons.Default.FolderShared, null) }, label = { Text(AppLanguage.text(context, "Documents", "المستندات")) })
+                NavigationBarItem(selected = currentTab == 3, onClick = { currentTab = 3 }, icon = { Icon(Icons.Default.EnhancedEncryption, null) }, label = { Text(AppLanguage.text(context, "Hidden Notes", "الملاحظات المخفية")) })
             }
         },
         floatingActionButton = {
@@ -574,7 +590,7 @@ fun SecretVaultScreen(
                             3 -> editingSecretNote = NoteItem(isSecret = true)
                         }
                     }
-                ) { Icon(Icons.Default.Add, contentDescription = "Add to vault") }
+                ) { Icon(Icons.Default.Add, contentDescription = AppLanguage.text(context, "Add to vault", "إضافة إلى الخزنة")) }
             }
         }
     ) { padding ->
@@ -585,12 +601,12 @@ fun SecretVaultScreen(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Search inside vault...", color = Color.Gray) },
+                    placeholder = { Text(AppLanguage.text(context, "Search inside vault...", "ابحث داخل الخزنة..."), color = Color.Gray) },
                     leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.Gray) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.Gray)
+                                Icon(Icons.Default.Clear, contentDescription = AppLanguage.text(context, "Clear", "مسح"), tint = Color.Gray)
                             }
                         }
                     },
@@ -606,7 +622,7 @@ fun SecretVaultScreen(
 
                 if (StorageRepository.hasVaultStorageReadError()) {
                     Text(
-                        "Part of the vault storage could not be read safely. Some changes may be unavailable to protect your existing data.",
+                        AppLanguage.text(context, "Part of the vault storage could not be read safely. Some changes may be unavailable to protect your existing data.", "تعذّرت قراءة جزء من مساحة تخزين الخزنة بأمان. قد تتعذّر بعض التغييرات لحماية بياناتك الحالية."),
                         color = Color(0xFFFF8A80),
                         modifier = Modifier.padding(vertical = 8.dp),
                         fontSize = 13.sp
@@ -629,7 +645,7 @@ fun SecretVaultScreen(
                                         currentSubFolder = folder
                                         selectedIds.clear()
                                     },
-                                    label = { Text(folder) },
+                                    label = { Text(if (folder == "General") AppLanguage.text(context, "General", "عام") else folder) },
                                     leadingIcon = {
                                         if (coverItem != null) {
                                             VaultFolderCoverIcon(item = coverItem)
@@ -646,7 +662,7 @@ fun SecretVaultScreen(
                                             showRenameFolderDialog = true
                                         }
                                     ) {
-                                        Icon(Icons.Default.Edit, contentDescription = "Rename folder", tint = Color(0xFF69F0AE), modifier = Modifier.size(18.dp))
+                                        Icon(Icons.Default.Edit, contentDescription = AppLanguage.text(context, "Rename folder", "إعادة تسمية المجلد"), tint = Color(0xFF69F0AE), modifier = Modifier.size(18.dp))
                                     }
                                     if (folder != (savedSubFolders.firstOrNull() ?: "General")) {
                                         IconButton(
@@ -654,7 +670,7 @@ fun SecretVaultScreen(
                                             onClick = {
                                                 val hasFiles = vaultFiles.any { it.mediaType == currentMediaType && it.subFolder == folder }
                                                 if (hasFiles) {
-                                                    Toast.makeText(context, "Move or delete files in '$folder' first.", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, AppLanguage.text(context, "Move or delete files in '$folder' first.", "انقل الملفات الموجودة في '$folder' أو احذفها أولًا."), Toast.LENGTH_SHORT).show()
                                                 } else {
                                                     val updatedFolders = savedSubFolders.filterNot { it.equals(folder, ignoreCase = true) }
                                                     if (StorageRepository.saveVaultFolders(context, currentMediaType, updatedFolders)) {
@@ -664,7 +680,7 @@ fun SecretVaultScreen(
                                                 }
                                             }
                                         ) {
-                                            Icon(Icons.Default.Close, contentDescription = "Delete folder", tint = Color(0xFFFF8A80), modifier = Modifier.size(18.dp))
+                                            Icon(Icons.Default.Close, contentDescription = AppLanguage.text(context, "Delete folder", "حذف المجلد"), tint = Color(0xFFFF8A80), modifier = Modifier.size(18.dp))
                                         }
                                     }
                                 }
@@ -672,7 +688,7 @@ fun SecretVaultScreen(
                         }
                         item {
                             IconButton(onClick = { showNewFolderDialog = true }) {
-                                Icon(Icons.Default.CreateNewFolder, "New album / subfolder", tint = Color(0xFF69F0AE))
+                                Icon(Icons.Default.CreateNewFolder, AppLanguage.text(context, "New album / subfolder", "ألبوم / مجلد فرعي جديد"), tint = Color(0xFF69F0AE))
                             }
                         }
                     }
@@ -697,7 +713,7 @@ fun SecretVaultScreen(
                     if (displayedSecretNotes.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
-                                if (showSecretTrash) "Hidden notes trash is empty" else "No hidden notes yet. Tap + to create one.",
+                                if (showSecretTrash) AppLanguage.text(context, "Hidden notes trash is empty", "سلة محذوفات الملاحظات المخفية فارغة") else AppLanguage.text(context, "No hidden notes yet. Tap + to create one.", "لا توجد ملاحظات مخفية بعد. اضغط + لإنشاء واحدة."),
                                 color = Color.Gray
                             )
                         }
@@ -723,14 +739,14 @@ fun SecretVaultScreen(
                                                         secretNotes = updated
                                                         if (!showSecretTrash) ReminderReceiver.cancelReminder(context, note.id)
                                                     } else {
-                                                        Toast.makeText(context, "Could not update hidden notes.", Toast.LENGTH_LONG).show()
+                                                        Toast.makeText(context, AppLanguage.text(context, "Could not update hidden notes.", "تعذّر تحديث الملاحظات المخفية."), Toast.LENGTH_LONG).show()
                                                     }
                                                 }
                                             )
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text(
-                                                    note.title.ifBlank { "Untitled" },
+                                                    note.title.ifBlank { AppLanguage.text(context, "Untitled", "بلا عنوان") },
                                                     color = Color.White,
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 16.sp,
@@ -739,12 +755,12 @@ fun SecretVaultScreen(
                                                     modifier = Modifier.weight(1f)
                                                 )
                                                 if (note.isPinned && !showSecretTrash) {
-                                                    Icon(Icons.Default.PushPin, "Pinned", tint = Color(0xFFFFD54F), modifier = Modifier.size(18.dp))
+                                                    Icon(Icons.Default.PushPin, AppLanguage.text(context, "Pinned", "مثبّتة"), tint = Color(0xFFFFD54F), modifier = Modifier.size(18.dp))
                                                 }
                                             }
                                             Spacer(Modifier.height(4.dp))
                                             Text(
-                                                note.plainTextPreview.ifBlank { "Empty note..." },
+                                                note.plainTextPreview.ifBlank { AppLanguage.text(context, "Empty note...", "ملاحظة فارغة...") },
                                                 color = Color.LightGray,
                                                 maxLines = 2,
                                                 overflow = TextOverflow.Ellipsis,
@@ -755,7 +771,7 @@ fun SecretVaultScreen(
                                                 Text(dateFormatter.format(Date(note.updatedAt)), color = Color.Gray, fontSize = 12.sp)
                                                 if (showSecretTrash) {
                                                     val daysLeft = daysRemainingInTrash(note.trashedAt)
-                                                    Text("$daysLeft d left • Hold to restore", color = Color(0xFF69F0AE), fontSize = 12.sp)
+                                                    Text(AppLanguage.text(context, "$daysLeft d left • Hold to restore", "متبقي $daysLeft يوم • اضغط مطولًا للاستعادة"), color = Color(0xFF69F0AE), fontSize = 12.sp)
                                                 }
                                             }
                                         }
@@ -766,10 +782,10 @@ fun SecretVaultScreen(
                                                     secretNotes = updated
                                                     ReminderReceiver.cancelReminder(context, note.id)
                                                 } else {
-                                                    Toast.makeText(context, "Could not delete hidden note.", Toast.LENGTH_LONG).show()
+                                                    Toast.makeText(context, AppLanguage.text(context, "Could not delete hidden note.", "تعذّر حذف الملاحظة المخفية."), Toast.LENGTH_LONG).show()
                                                 }
                                             }) {
-                                                Icon(Icons.Default.DeleteForever, "Delete permanently", tint = Color(0xFFFF5252))
+                                                Icon(Icons.Default.DeleteForever, AppLanguage.text(context, "Delete permanently", "حذف نهائي"), tint = Color(0xFFFF5252))
                                             }
                                         }
                                     }
@@ -782,7 +798,7 @@ fun SecretVaultScreen(
                     if (filteredFiles.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
-                                if (currentTab == 4) "Vault trash is empty" else "No encrypted files in '$currentSubFolder' yet.",
+                                if (currentTab == 4) AppLanguage.text(context, "Vault trash is empty", "سلة محذوفات الخزنة فارغة") else AppLanguage.text(context, "No encrypted files in '$currentSubFolder' yet.", "لا توجد ملفات مشفّرة في '$currentSubFolder' بعد."),
                                 color = Color.Gray
                             )
                         }
@@ -826,7 +842,7 @@ fun SecretVaultScreen(
                                                 VaultMediaType.DOCUMENT -> VaultDocumentThumbnail(item = item, modifier = Modifier.fillMaxSize())
                                             }
                                             if (isSelected) {
-                                                Icon(Icons.Default.CheckCircle, "Selected", tint = Color(0xFF69F0AE),
+                                                Icon(Icons.Default.CheckCircle, AppLanguage.text(context, "Selected", "محدد"), tint = Color(0xFF69F0AE),
                                                     modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(26.dp))
                                             }
                                             Column(
@@ -848,9 +864,9 @@ fun SecretVaultScreen(
                                                                     it.copy(isAlbumCover = (it.id == item.id)) else it
                                                             }.toMutableList()
                                                             if (StorageRepository.saveVaultFiles(context, updated)) vaultFiles = updated
-                                                            else Toast.makeText(context, "Could not update vault.", Toast.LENGTH_LONG).show()
+                                                            else Toast.makeText(context, AppLanguage.text(context, "Could not update vault.", "تعذّر تحديث الخزنة."), Toast.LENGTH_LONG).show()
                                                         }, modifier = Modifier.size(30.dp)) {
-                                                            Icon(Icons.Default.Star, "Album cover",
+                                                            Icon(Icons.Default.Star, AppLanguage.text(context, "Album cover", "غلاف الألبوم"),
                                                                 tint = if (item.isAlbumCover) Color(0xFFFFD54F) else Color.White,
                                                                 modifier = Modifier.size(18.dp))
                                                         }
@@ -861,9 +877,9 @@ fun SecretVaultScreen(
                                                                 if (it.id == item.id) it.copy(isTrashed = false, trashedAt = null) else it
                                                             }.toMutableList()
                                                             if (StorageRepository.saveVaultFiles(context, updated)) vaultFiles = updated
-                                                            else Toast.makeText(context, "Could not restore file.", Toast.LENGTH_LONG).show()
+                                                            else Toast.makeText(context, AppLanguage.text(context, "Could not restore file.", "تعذّرت استعادة الملف."), Toast.LENGTH_LONG).show()
                                                         }, modifier = Modifier.size(30.dp)) {
-                                                            Icon(Icons.Default.Restore, "Restore to vault", tint = Color(0xFF40C4FF),
+                                                            Icon(Icons.Default.Restore, AppLanguage.text(context, "Restore to vault", "استعادة إلى الخزنة"), tint = Color(0xFF40C4FF),
                                                                 modifier = Modifier.size(18.dp))
                                                         }
                                                         IconButton(onClick = {
@@ -872,10 +888,10 @@ fun SecretVaultScreen(
                                                                 val blob = File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName)
                                                                 val cleanupFailed = blob.exists() && !blob.delete() && blob.exists()
                                                                 vaultFiles = updated.toMutableList()
-                                                                if (cleanupFailed) Toast.makeText(context, "File removed from the vault index, but its stored copy could not be physically deleted.", Toast.LENGTH_LONG).show()
-                                                            } else Toast.makeText(context, "Could not delete file.", Toast.LENGTH_LONG).show()
+                                                                if (cleanupFailed) Toast.makeText(context, AppLanguage.text(context, "File removed from the vault index, but its stored copy could not be physically deleted.", "تمت إزالة الملف من فهرس الخزنة، لكن تعذّر حذف نسخته المخزنة فعليًا."), Toast.LENGTH_LONG).show()
+                                                            } else Toast.makeText(context, AppLanguage.text(context, "Could not delete file.", "تعذّر حذف الملف."), Toast.LENGTH_LONG).show()
                                                         }, modifier = Modifier.size(30.dp)) {
-                                                            Icon(Icons.Default.DeleteForever, "Delete permanently", tint = Color(0xFFFF5252),
+                                                            Icon(Icons.Default.DeleteForever, AppLanguage.text(context, "Delete permanently", "حذف نهائي"), tint = Color(0xFFFF5252),
                                                                 modifier = Modifier.size(18.dp))
                                                         }
                                                     } else {
@@ -884,7 +900,7 @@ fun SecretVaultScreen(
                                                             onPickerStateChange(true)
                                                             launchRestorePicker()
                                                         }, modifier = Modifier.size(30.dp)) {
-                                                            Icon(Icons.Default.Unarchive, "Restore to device", tint = Color(0xFF40C4FF),
+                                                            Icon(Icons.Default.Unarchive, AppLanguage.text(context, "Restore to device", "استعادة إلى الجهاز"), tint = Color(0xFF40C4FF),
                                                                 modifier = Modifier.size(18.dp))
                                                         }
                                                     }
@@ -939,7 +955,7 @@ fun SecretVaultScreen(
                                                 Text(item.originalName, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                 val sizeKb = (item.sizeBytes / 1024L).coerceAtLeast(1L)
                                                 val dateStr = dateFormatter.format(Date(item.addedAt))
-                                                val trashInfo = if (item.isTrashed) " • ${daysRemainingInTrash(item.trashedAt)}d left" else ""
+                                                val trashInfo = if (item.isTrashed) AppLanguage.text(context, " • ${daysRemainingInTrash(item.trashedAt)}d left", " • متبقي ${daysRemainingInTrash(item.trashedAt)} يوم") else ""
                                                 Text("$sizeKb KB • $dateStr$trashInfo", color = Color.Gray, fontSize = 12.sp)
                                             }
                                         }
@@ -952,10 +968,10 @@ fun SecretVaultScreen(
                                                     }.toMutableList()
                                                     if (StorageRepository.saveVaultFiles(context, updated)) {
                                                         vaultFiles = updated
-                                                        Toast.makeText(context, "Album cover set 🖼️", Toast.LENGTH_SHORT).show()
-                                                    } else Toast.makeText(context, "Could not update album cover.", Toast.LENGTH_LONG).show()
+                                                        Toast.makeText(context, AppLanguage.text(context, "Album cover set 🖼️", "تم تعيين غلاف الألبوم 🖼️"), Toast.LENGTH_SHORT).show()
+                                                    } else Toast.makeText(context, AppLanguage.text(context, "Could not update album cover.", "تعذّر تحديث غلاف الألبوم."), Toast.LENGTH_LONG).show()
                                                 }) {
-                                                    Icon(Icons.Default.Star, "Album cover", tint = if (item.isAlbumCover) Color(0xFFFFD54F) else Color(0xFFB0B0B0))
+                                                    Icon(Icons.Default.Star, AppLanguage.text(context, "Album cover", "غلاف الألبوم"), tint = if (item.isAlbumCover) Color(0xFFFFD54F) else Color(0xFFB0B0B0))
                                                 }
                                             }
                                             if (item.isTrashed) {
@@ -964,8 +980,8 @@ fun SecretVaultScreen(
                                                         if (it.id == item.id) it.copy(isTrashed = false, trashedAt = null) else it
                                                     }.toMutableList()
                                                     if (StorageRepository.saveVaultFiles(context, updated)) vaultFiles = updated
-                                                    else Toast.makeText(context, "Could not restore file.", Toast.LENGTH_LONG).show()
-                                                }) { Icon(Icons.Default.Restore, "Restore to vault", tint = Color(0xFF40C4FF)) }
+                                                    else Toast.makeText(context, AppLanguage.text(context, "Could not restore file.", "تعذّرت استعادة الملف."), Toast.LENGTH_LONG).show()
+                                                }) { Icon(Icons.Default.Restore, AppLanguage.text(context, "Restore to vault", "استعادة إلى الخزنة"), tint = Color(0xFF40C4FF)) }
                                                 IconButton(onClick = {
                                                     val updated = vaultFiles.filterNot { it.id == item.id }
                                                     if (StorageRepository.saveVaultFiles(context, updated)) {
@@ -973,19 +989,19 @@ fun SecretVaultScreen(
                                                         val cleanupFailed = blob.exists() && !blob.delete() && blob.exists()
                                                         vaultFiles = updated.toMutableList()
                                                         if (cleanupFailed) {
-                                                            Toast.makeText(context, "File removed from the vault index, but its stored copy could not be physically deleted.", Toast.LENGTH_LONG).show()
+                                                            Toast.makeText(context, AppLanguage.text(context, "File removed from the vault index, but its stored copy could not be physically deleted.", "تمت إزالة الملف من فهرس الخزنة، لكن تعذّر حذف نسخته المخزنة فعليًا."), Toast.LENGTH_LONG).show()
                                                         } else {
-                                                            Toast.makeText(context, "File permanently deleted.", Toast.LENGTH_SHORT).show()
+                                                            Toast.makeText(context, AppLanguage.text(context, "File permanently deleted.", "تم حذف الملف نهائيًا."), Toast.LENGTH_SHORT).show()
                                                         }
-                                                    } else Toast.makeText(context, "Could not delete file.", Toast.LENGTH_LONG).show()
-                                                }) { Icon(Icons.Default.DeleteForever, "Delete permanently", tint = Color(0xFFFF5252)) }
+                                                    } else Toast.makeText(context, AppLanguage.text(context, "Could not delete file.", "تعذّر حذف الملف."), Toast.LENGTH_LONG).show()
+                                                }) { Icon(Icons.Default.DeleteForever, AppLanguage.text(context, "Delete permanently", "حذف نهائي"), tint = Color(0xFFFF5252)) }
                                             } else {
                                                 // زر إلغاء الإخفاء واسترجاع الملف للهاتف
                                                 IconButton(onClick = {
                                                     pendingRestoreItems = listOf(item)
                                                     onPickerStateChange(true)
                                                     launchRestorePicker()
-                                                }) { Icon(Icons.Default.Unarchive, "Unhide / Restore to device", tint = Color(0xFF40C4FF)) }
+                                                }) { Icon(Icons.Default.Unarchive, AppLanguage.text(context, "Unhide / Restore to device", "إلغاء الإخفاء / استعادة إلى الجهاز"), tint = Color(0xFF40C4FF)) }
                                             }
                                         }
                                     }
@@ -1024,13 +1040,13 @@ fun SecretVaultScreen(
         AlertDialog(
             onDismissRequest = { showRenameFolderDialog = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text("Rename folder", color = Color.White) },
+            title = { Text(AppLanguage.text(context, "Rename folder", "إعادة تسمية المجلد"), color = Color.White) },
             text = {
                 OutlinedTextField(
                     value = renamedFolder,
                     onValueChange = { renamedFolder = it },
                     singleLine = true,
-                    placeholder = { Text("New folder name...") }
+                    placeholder = { Text(AppLanguage.text(context, "New folder name...", "اسم المجلد الجديد...")) }
                 )
             },
             confirmButton = {
@@ -1038,11 +1054,11 @@ fun SecretVaultScreen(
                     val newName = renamedFolder.trim()
                     val defaultFolder = savedSubFolders.firstOrNull() ?: "General"
                     if (newName.isBlank() || newName.length > 40 || newName.any { it == '/' || it == '\\' }) {
-                        Toast.makeText(context, "Folder name is invalid (1–40 characters).", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, AppLanguage.text(context, "Folder name is invalid (1–40 characters).", "اسم المجلد غير صالح (من 1 إلى 40 حرفًا)."), Toast.LENGTH_SHORT).show()
                     } else if (newName.equals(folderBeingRenamed, ignoreCase = true)) {
                         showRenameFolderDialog = false
                     } else if (subFolders.any { it.equals(newName, ignoreCase = true) }) {
-                        Toast.makeText(context, "A folder with this name already exists.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, AppLanguage.text(context, "A folder with this name already exists.", "يوجد مجلد بهذا الاسم بالفعل."), Toast.LENGTH_SHORT).show()
                     } else {
                         val updatedFiles = vaultFiles.map { file ->
                             if (file.mediaType == currentMediaType && file.subFolder == folderBeingRenamed) file.copy(subFolder = newName) else file
@@ -1054,26 +1070,26 @@ fun SecretVaultScreen(
                                 vaultFiles = updatedFiles
                                 savedSubFolders = updatedFolders.toMutableList()
                                 if (currentSubFolder == folderBeingRenamed) currentSubFolder = newName
-                                Toast.makeText(context, "Folder renamed.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, AppLanguage.text(context, "Folder renamed.", "تمت إعادة تسمية المجلد."), Toast.LENGTH_SHORT).show()
                                 showRenameFolderDialog = false
                             } else {
                                 // Keep the original folder available if the file index could not be updated.
                                 val rollbackOk = StorageRepository.saveVaultFolders(context, currentMediaType, savedSubFolders)
                                 Toast.makeText(
                                     context,
-                                    if (rollbackOk) "Could not rename folder. Files were kept unchanged."
-                                    else "Folder list could not be fully rolled back. Your files remain in their original folder.",
+                                    if (rollbackOk) AppLanguage.text(context, "Could not rename folder. Files were kept unchanged.", "تعذّرت إعادة تسمية المجلد. لم يتم تغيير الملفات.")
+                                    else AppLanguage.text(context, "Folder list could not be fully rolled back. Your files remain in their original folder.", "تعذّر التراجع عن قائمة المجلدات بالكامل. ما زالت ملفاتك في مجلدها الأصلي."),
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
                         } else {
-                            Toast.makeText(context, "Could not rename folder safely.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, AppLanguage.text(context, "Could not rename folder safely.", "تعذّرت إعادة تسمية المجلد بأمان."), Toast.LENGTH_LONG).show()
                         }
                     }
-                }) { Text("Rename") }
+                }) { Text(AppLanguage.text(context, "Rename", "إعادة تسمية")) }
             },
             dismissButton = {
-                TextButton(onClick = { showRenameFolderDialog = false }) { Text("Cancel", color = Color.Gray) }
+                TextButton(onClick = { showRenameFolderDialog = false }) { Text(AppLanguage.text(context, "Cancel", "إلغاء"), color = Color.Gray) }
             }
         )
     }
@@ -1083,12 +1099,12 @@ fun SecretVaultScreen(
         AlertDialog(
             onDismissRequest = { showNewFolderDialog = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text("Create Subfolder / Album", color = Color.White) },
+            title = { Text(AppLanguage.text(context, "Create Subfolder / Album", "إنشاء مجلد فرعي / ألبوم"), color = Color.White) },
             text = {
                 OutlinedTextField(
                     value = folderName,
                     onValueChange = { folderName = it },
-                    placeholder = { Text("Folder or album name...") },
+                    placeholder = { Text(AppLanguage.text(context, "Folder or album name...", "اسم المجلد أو الألبوم...")) },
                     singleLine = true
                 )
             },
@@ -1098,24 +1114,24 @@ fun SecretVaultScreen(
                     if (name.isNotBlank() && name.length <= 40 && name.none { it == '/' || it == '\\' }) {
                         val duplicate = subFolders.any { it.equals(name, ignoreCase = true) }
                         if (duplicate) {
-                            Toast.makeText(context, "A folder with this name already exists.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, AppLanguage.text(context, "A folder with this name already exists.", "يوجد مجلد بهذا الاسم بالفعل."), Toast.LENGTH_SHORT).show()
                         } else {
                             val updatedFolders = (savedSubFolders + name).distinct()
                             if (StorageRepository.saveVaultFolders(context, currentMediaType, updatedFolders)) {
                                 savedSubFolders = updatedFolders.toMutableList()
                                 currentSubFolder = name
                             } else {
-                                Toast.makeText(context, "Could not save folder.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, AppLanguage.text(context, "Could not save folder.", "تعذّر حفظ المجلد."), Toast.LENGTH_LONG).show()
                             }
                         }
                     } else {
-                        Toast.makeText(context, "Folder name is invalid (1–40 characters).", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, AppLanguage.text(context, "Folder name is invalid (1–40 characters).", "اسم المجلد غير صالح (من 1 إلى 40 حرفًا)."), Toast.LENGTH_SHORT).show()
                     }
                     showNewFolderDialog = false
-                }) { Text("Create") }
+                }) { Text(AppLanguage.text(context, "Create", "إنشاء")) }
             },
             dismissButton = {
-                TextButton(onClick = { showNewFolderDialog = false }) { Text("Cancel", color = Color.Gray) }
+                TextButton(onClick = { showNewFolderDialog = false }) { Text(AppLanguage.text(context, "Cancel", "إلغاء"), color = Color.Gray) }
             }
         )
     }
@@ -1124,7 +1140,7 @@ fun SecretVaultScreen(
         AlertDialog(
             onDismissRequest = { showMoveFolderDialog = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text("Move ${selectedIds.size} file(s) to folder", color = Color.White) },
+            title = { Text(AppLanguage.text(context, "Move ${selectedIds.size} file(s) to folder", "نقل ${selectedIds.size} ملفًا إلى مجلد"), color = Color.White) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     subFolders.forEach { targetFolder ->
@@ -1138,7 +1154,7 @@ fun SecretVaultScreen(
                                     vaultFiles = updated
                                     selectedIds.clear()
                                     currentSubFolder = targetFolder
-                                    Toast.makeText(context, "Moved to '$targetFolder'", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, AppLanguage.text(context, "Moved to '$targetFolder'", "تم النقل إلى '$targetFolder'"), Toast.LENGTH_SHORT).show()
                                 }
                                 showMoveFolderDialog = false
                             }
@@ -1151,7 +1167,7 @@ fun SecretVaultScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showMoveFolderDialog = false }) { Text("Cancel", color = Color.Gray) }
+                TextButton(onClick = { showMoveFolderDialog = false }) { Text(AppLanguage.text(context, "Cancel", "إلغاء"), color = Color.Gray) }
             }
         )
     }
@@ -1160,8 +1176,8 @@ fun SecretVaultScreen(
         AlertDialog(
             onDismissRequest = { showEmptyTrashDialog = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text("Empty Trash Permanently?", color = Color.White) },
-            text = { Text("All items in this trash view will be permanently erased.", color = Color.LightGray) },
+            title = { Text(AppLanguage.text(context, "Empty Trash Permanently?", "إفراغ سلة المحذوفات نهائيًا؟"), color = Color.White) },
+            text = { Text(AppLanguage.text(context, "All items in this trash view will be permanently erased.", "سيتم حذف جميع العناصر في سلة المحذوفات هذه نهائيًا."), color = Color.LightGray) },
             confirmButton = {
                 Button(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
@@ -1170,9 +1186,9 @@ fun SecretVaultScreen(
                             val updated = secretNotes.filterNot { it.isTrashed }.toMutableList()
                             if (StorageRepository.saveSecretNotes(context, updated)) {
                                 secretNotes = updated
-                                Toast.makeText(context, "Private notes trash emptied.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, AppLanguage.text(context, "Private notes trash emptied.", "تم إفراغ محذوفات الملاحظات الخاصة."), Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(context, "Could not empty private notes trash. Your notes were kept.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, AppLanguage.text(context, "Could not empty private notes trash. Your notes were kept.", "تعذّر إفراغ محذوفات الملاحظات الخاصة. تم الاحتفاظ بملاحظاتك."), Toast.LENGTH_LONG).show()
                             }
                         } else if (currentTab == 4) {
                             val trashedFiles = vaultFiles.filter { it.isTrashed }
@@ -1185,20 +1201,20 @@ fun SecretVaultScreen(
                                 }
                                 vaultFiles = updated
                                 if (cleanupFailures == 0) {
-                                    Toast.makeText(context, "Vault trash emptied.", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, AppLanguage.text(context, "Vault trash emptied.", "تم إفراغ محذوفات الخزنة."), Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Trash emptied, but $cleanupFailures stored file(s) could not be physically removed.", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, AppLanguage.text(context, "Trash emptied, but $cleanupFailures stored file(s) could not be physically removed.", "تم إفراغ سلة المحذوفات، لكن تعذّر حذف $cleanupFailures ملفًا مخزنًا فعليًا."), Toast.LENGTH_LONG).show()
                                 }
                             } else {
-                                Toast.makeText(context, "Could not empty vault trash. Your files were kept.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, AppLanguage.text(context, "Could not empty vault trash. Your files were kept.", "تعذّر إفراغ محذوفات الخزنة. تم الاحتفاظ بملفاتك."), Toast.LENGTH_LONG).show()
                             }
                         }
                         showEmptyTrashDialog = false
                     }
-                ) { Text("Delete All", color = Color.White) }
+                ) { Text(AppLanguage.text(context, "Delete All", "حذف الكل"), color = Color.White) }
             },
             dismissButton = {
-                TextButton(onClick = { showEmptyTrashDialog = false }) { Text("Cancel", color = Color.Gray) }
+                TextButton(onClick = { showEmptyTrashDialog = false }) { Text(AppLanguage.text(context, "Cancel", "إلغاء"), color = Color.Gray) }
             }
         )
     }
@@ -1290,7 +1306,7 @@ private fun VaultVideoThumbnail(item: VaultFileItem, modifier: Modifier = Modifi
             Image(bitmap.asImageBitmap(), contentDescription = item.originalName,
                 contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
-        Icon(Icons.Default.PlayCircleFilled, "Play video", tint = Color.White,
+        Icon(Icons.Default.PlayCircleFilled, AppLanguage.text(context, "Play video", "تشغيل الفيديو"), tint = Color.White,
             modifier = Modifier.align(Alignment.Center).size(32.dp))
         if (duration != null && duration > 0L) {
             val totalSeconds = duration / 1000L
@@ -1321,7 +1337,7 @@ private fun VaultDocumentThumbnail(item: VaultFileItem, modifier: Modifier = Mod
             }
         }
         Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF303030)).padding(7.dp)) {
-            Text(snippet?.ifBlank { "Empty text file" } ?: "Text document", color = Color(0xFFE0E0E0),
+            Text(snippet?.ifBlank { AppLanguage.text(context, "Empty text file", "ملف نصي فارغ") } ?: AppLanguage.text(context, "Text document", "مستند نصي"), color = Color(0xFFE0E0E0),
                 fontSize = 9.sp, lineHeight = 12.sp, maxLines = 8, overflow = TextOverflow.Ellipsis)
         }
     } else {
@@ -1329,12 +1345,17 @@ private fun VaultDocumentThumbnail(item: VaultFileItem, modifier: Modifier = Mod
             value = withContext(Dispatchers.IO) { decodeVaultPdfThumbnail(context, item, 480) }
         }
         if (bitmap != null) {
-            Image(bitmap!!.asImageBitmap(), contentDescription = "First page of ${item.originalName}",
+            Image(bitmap!!.asImageBitmap(), contentDescription = AppLanguage.text(context, "First page of ${item.originalName}", "الصفحة الأولى من ${item.originalName}"),
                 contentScale = ContentScale.Crop, modifier = modifier.clip(RoundedCornerShape(10.dp)))
         } else {
             Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF303030)),
                 contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.PictureAsPdf, "PDF document", tint = Color(0xFF69F0AE), modifier = Modifier.size(40.dp))
+                Icon(
+                    Icons.Default.PictureAsPdf,
+                    AppLanguage.text(context, "PDF document", "ملف PDF"),
+                    tint = Color(0xFF69F0AE),
+                    modifier = Modifier.size(40.dp)
+                )
             }
         }
     }
@@ -1566,7 +1587,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                         ) {
                             Icon(
                                 if (isFullscreenLandscape) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                                contentDescription = "Toggle Fullscreen",
+                                contentDescription = AppLanguage.text(context, "Toggle Fullscreen", "تبديل وضع ملء الشاشة"),
                                 tint = Color.White
                             )
                         }
@@ -1582,7 +1603,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
             onClick = { exitViewer() },
             modifier = Modifier.align(Alignment.TopStart).padding(16.dp).background(Color(0x88000000), RoundedCornerShape(50))
         ) {
-            Icon(Icons.Default.Close, "Close", tint = Color.White)
+            Icon(Icons.Default.Close, AppLanguage.text(context, "Close", "إغلاق"), tint = Color.White)
         }
     }
 }
@@ -1637,13 +1658,13 @@ fun InAppPdfViewer(item: VaultFileItem, onClose: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(item.originalName, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
-            IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Close", tint = Color.White) }
+            IconButton(onClick = onClose) { Icon(Icons.Default.Close, AppLanguage.text(context, "Close", "إغلاق"), tint = Color.White) }
         }
         when {
             isDecrypting -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color(0xFF69F0AE))
             }
-            decryptedFile == null -> Text("Unable to decrypt this document.", color = Color.White, modifier = Modifier.padding(16.dp))
+            decryptedFile == null -> Text(AppLanguage.text(context, "Unable to decrypt this document.", "تعذّر فك تشفير هذا المستند."), color = Color.White, modifier = Modifier.padding(16.dp))
             isTextDocument && textContent != null -> SelectionContainer {
                 Text(
                     textContent!!,
@@ -1651,7 +1672,7 @@ fun InAppPdfViewer(item: VaultFileItem, onClose: () -> Unit) {
                     modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
                 )
             }
-            isTextDocument -> Text("Unable to read this text document.", color = Color.White, modifier = Modifier.padding(16.dp))
+            isTextDocument -> Text(AppLanguage.text(context, "Unable to read this text document.", "تعذّرت قراءة هذا المستند النصي."), color = Color.White, modifier = Modifier.padding(16.dp))
             pageCount > 0 -> LazyColumn(
                 Modifier.fillMaxSize().padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1660,13 +1681,14 @@ fun InAppPdfViewer(item: VaultFileItem, onClose: () -> Unit) {
                     PdfPageImage(file = decryptedFile!!, pageIndex = pageIndex, renderMutex = renderMutex)
                 }
             }
-            else -> Text("Unsupported document format. Import PDF or plain text files.", color = Color.White, modifier = Modifier.padding(16.dp))
+            else -> Text(AppLanguage.text(context, "Unsupported document format. Import PDF or plain text files.", "تنسيق المستند غير مدعوم. استورد ملفات PDF أو ملفات نصية عادية."), color = Color.White, modifier = Modifier.padding(16.dp))
         }
     }
 }
 
 @Composable
 private fun PdfPageImage(file: File, pageIndex: Int, renderMutex: Mutex) {
+    val context = LocalContext.current
     val bitmap by produceState<Bitmap?>(initialValue = null, file, pageIndex) {
         value = withContext(Dispatchers.IO) {
             renderMutex.withLock {
@@ -1696,7 +1718,7 @@ private fun PdfPageImage(file: File, pageIndex: Int, renderMutex: Mutex) {
     if (bitmap != null) {
         Image(
             bitmap = bitmap!!.asImageBitmap(),
-            contentDescription = "PDF page ${pageIndex + 1}",
+            contentDescription = AppLanguage.text(context, "PDF page ${pageIndex + 1}", "صفحة PDF رقم ${pageIndex + 1}"),
             contentScale = ContentScale.FillWidth,
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(Color.White)
         )

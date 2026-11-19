@@ -82,6 +82,7 @@ data class SerializableStroke(val points: List<Pair<Float, Float>>, val colorHex
 @Composable
 fun NoteEditorScreen(
     activity: ComponentActivity,
+    printContext: Context,
     note: NoteItem,
     onSave: (NoteItem) -> Unit,
     onBack: () -> Unit,
@@ -150,7 +151,7 @@ fun NoteEditorScreen(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                Toast.makeText(context, "Could not insert selected image.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, AppLanguage.text(context, "Could not insert selected image.", "تعذّر إدراج الصورة المحددة."), Toast.LENGTH_SHORT).show()
             } finally {
                 scaledBitmap?.takeIf { it !== bmp && !it.isRecycled }?.recycle()
                 if (!bmp.isRecycled) bmp.recycle()
@@ -192,7 +193,7 @@ fun NoteEditorScreen(
                         handedOff = true
                         encodeBitmapToBase64AndInsert(bmp)
                     } else {
-                        Toast.makeText(context, "Could not load selected image.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, AppLanguage.text(context, "Could not load selected image.", "تعذّر تحميل الصورة المحددة."), Toast.LENGTH_SHORT).show()
                     }
                 } finally {
                     if (!handedOff) {
@@ -228,10 +229,10 @@ fun NoteEditorScreen(
     fun persistAndExit() {
         try {
             onSave(buildUpdatedNote())
-            Toast.makeText(context, "Note saved successfully ✅", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, AppLanguage.text(context, "Note saved successfully ✅", "تم حفظ الملاحظة بنجاح ✅"), Toast.LENGTH_SHORT).show()
             onBack()
         } catch (_: Exception) {
-            Toast.makeText(context, "Could not save note. Please try again.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, AppLanguage.text(context, "Could not save note. Please try again.", "تعذّر حفظ الملاحظة. حاول مرة أخرى."), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -252,7 +253,7 @@ fun NoteEditorScreen(
     fun launchPdfExport() {
         val editorView = webViewRef
         if (editorView == null) {
-            Toast.makeText(context, "The editor is not ready for PDF export.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, AppLanguage.text(context, "The editor is not ready for PDF export.", "المحرر غير جاهز لتصدير PDF."), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -286,7 +287,7 @@ fun NoteEditorScreen(
                 if (activity.isFinishing || activity.isDestroyed) {
                     throw IllegalStateException("The activity is no longer active.")
                 }
-                val printManager = activity.getSystemService(Context.PRINT_SERVICE) as? PrintManager
+                val printManager = printContext.getSystemService(Context.PRINT_SERVICE) as? PrintManager
                     ?: throw IllegalStateException("Print service is unavailable.")
                 val printAttributes = PrintAttributes.Builder()
                     .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
@@ -301,17 +302,16 @@ fun NoteEditorScreen(
                 )
                 Toast.makeText(
                     context,
-                    "Choose Save as PDF in the print screen to save this note.",
+                    AppLanguage.text(context, "Choose Save as PDF in the print screen to save this note.", "اختر «حفظ بتنسيق PDF» من شاشة الطباعة لحفظ هذه الملاحظة."),
                     Toast.LENGTH_LONG
                 ).show()
             } catch (error: Exception) {
                 Log.e("StealthVaultPDF", "Failed to start A4 PDF export", error)
-                val detail = error.localizedMessage?.takeIf { it.isNotBlank() }
-                val message = if (detail != null) {
-                    "Could not prepare PDF: $detail"
-                } else {
-                    "Could not prepare the PDF for printing."
-                }
+                val message = AppLanguage.text(
+                    context,
+                    "Could not prepare the PDF for printing. Please try again.",
+                    "تعذّر تجهيز ملف PDF للطباعة. حاول مرة أخرى."
+                )
                 Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             }
         }
@@ -341,7 +341,7 @@ fun NoteEditorScreen(
         try {
             onSave(buildUpdatedNote())
         } catch (_: Exception) {
-            Toast.makeText(context, "Could not auto-save this note. Reopen it and try saving again.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, AppLanguage.text(context, "Could not auto-save this note. Reopen it and try saving again.", "تعذّر الحفظ التلقائي لهذه الملاحظة. افتحها مجددًا وحاول الحفظ."), Toast.LENGTH_LONG).show()
         }
     }
     val hostActivity = context as? ComponentActivity
@@ -371,7 +371,7 @@ fun NoteEditorScreen(
                     TextField(
                         value = title,
                         onValueChange = { title = it },
-                        placeholder = { Text("Note title...", color = Color.Gray) },
+                        placeholder = { Text(AppLanguage.text(context, "Note title...", "عنوان الملاحظة..."), color = Color.Gray) },
                         singleLine = true,
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.Transparent,
@@ -385,22 +385,22 @@ fun NoteEditorScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = { saveAndExit() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.Default.ArrowBack, contentDescription = AppLanguage.text(context, "Back", "رجوع"), tint = Color.White)
                     }
                 },
                 actions = {
                     // أزرار تراجع وتقديم سريعة للكتابة جوة المحرر
                     IconButton(onClick = { webViewRef?.evaluateJavascript("document.execCommand('undo'); notifyEditorChanged();", null) }) {
-                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = AppLanguage.text(context, "Undo", "تراجع"), tint = Color.White)
                     }
                     IconButton(onClick = { webViewRef?.evaluateJavascript("document.execCommand('redo'); notifyEditorChanged();", null) }) {
-                        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = AppLanguage.text(context, "Redo", "إعادة"), tint = Color.White)
                     }
                     // تثبيت الملاحظة في الأعلى (Pin)
                     IconButton(onClick = { isPinned = !isPinned }) {
                         Icon(
                             Icons.Default.PushPin,
-                            contentDescription = "Pin",
+                            contentDescription = AppLanguage.text(context, "Pin", "تثبيت"),
                             tint = if (isPinned) Color(0xFFFFD54F) else Color.Gray
                         )
                     }
@@ -409,7 +409,7 @@ fun NoteEditorScreen(
                         IconButton(onClick = { showReminderDialog = true }) {
                             Icon(
                                 Icons.Default.NotificationsActive,
-                                contentDescription = "Reminder",
+                                contentDescription = AppLanguage.text(context, "Reminder", "تذكير"),
                                 tint = if (reminderTime != null && reminderTime!! > System.currentTimeMillis()) Color(0xFF69F0AE) else Color(0xFF80CBC4)
                             )
                         }
@@ -418,10 +418,10 @@ fun NoteEditorScreen(
                     IconButton(onClick = {
                         if (allowReminders) launchPdfExport() else showPrivatePdfWarning = true
                     }) {
-                        Icon(Icons.Default.PictureAsPdf, contentDescription = "Export as PDF", tint = Color(0xFFFF8A65))
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = AppLanguage.text(context, "Export as PDF", "تصدير PDF"), tint = Color(0xFFFF8A65))
                     }
                     IconButton(onClick = { saveAndExit() }) {
-                        Icon(Icons.Default.Check, contentDescription = "Save", tint = Color(0xFF69F0AE))
+                        Icon(Icons.Default.Check, contentDescription = AppLanguage.text(context, "Save", "حفظ"), tint = Color(0xFF69F0AE))
                     }
                 }
             )
@@ -451,7 +451,7 @@ fun NoteEditorScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Pen:", color = Color.LightGray, fontSize = 12.sp)
+                            Text(AppLanguage.text(context, "Pen:", "القلم:"), color = Color.LightGray, fontSize = 12.sp)
                             penColors.forEach { hexLong ->
                                 val isSelected = selectedPenColor == hexLong
                                 Box(
@@ -467,10 +467,10 @@ fun NoteEditorScreen(
                         Row {
                             if (strokes.isNotEmpty()) {
                                 TextButton(onClick = { strokes.removeLastOrNull() }) {
-                                    Text("Undo Stroke", color = Color(0xFFFFAB40), fontSize = 12.sp)
+                                    Text(AppLanguage.text(context, "Undo Stroke", "التراجع عن آخر خط"), color = Color(0xFFFFAB40), fontSize = 12.sp)
                                 }
                                 TextButton(onClick = { strokes.clear() }) {
-                                    Text("Clear All", color = Color(0xFFFF5252), fontSize = 12.sp)
+                                    Text(AppLanguage.text(context, "Clear All", "مسح الكل"), color = Color(0xFFFF5252), fontSize = 12.sp)
                                 }
                             }
                         }
@@ -505,7 +505,7 @@ fun NoteEditorScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            if (showColorPickerForText) "Text color:" else "Highlight:",
+                            if (showColorPickerForText) AppLanguage.text(context, "Text color:", "لون النص:") else AppLanguage.text(context, "Highlight:", "تمييز:"),
                             color = Color.LightGray,
                             fontSize = 12.sp
                         )
@@ -528,7 +528,7 @@ fun NoteEditorScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (hex == "transparent") {
-                                    Icon(Icons.Default.FormatColorReset, contentDescription = "Remove highlight", tint = Color.White, modifier = Modifier.size(15.dp))
+                                    Icon(Icons.Default.FormatColorReset, contentDescription = AppLanguage.text(context, "Remove highlight", "إزالة التمييز"), tint = Color.White, modifier = Modifier.size(15.dp))
                                 }
                             }
                         }
@@ -545,7 +545,7 @@ fun NoteEditorScreen(
                 ) {
                     // 1. أيقونة الصورة (من المعرض أو التقاط بالكاميرا)
                     IconButton(onClick = { showImageSourceDialog = true }) {
-                        Icon(Icons.Default.Image, contentDescription = "Insert image", tint = Color.White)
+                        Icon(Icons.Default.Image, contentDescription = AppLanguage.text(context, "Insert image", "إدراج صورة"), tint = Color.White)
                     }
 
                     // 2. أيقونة الخط المنحني (الرسم اليدوي الحر)
@@ -559,7 +559,7 @@ fun NoteEditorScreen(
                     }) {
                         Icon(
                             Icons.Default.Gesture,
-                            contentDescription = "Draw",
+                            contentDescription = AppLanguage.text(context, "Draw", "رسم"),
                             tint = if (isDrawingMode) Color(0xFF69F0AE) else Color.White
                         )
                     }
@@ -568,7 +568,7 @@ fun NoteEditorScreen(
                     IconButton(onClick = {
                         webViewRef?.evaluateJavascript("insertChecklistItem();", null)
                     }) {
-                        Icon(Icons.Default.CheckBox, contentDescription = "Checklist", tint = Color.White)
+                        Icon(Icons.Default.CheckBox, contentDescription = AppLanguage.text(context, "Checklist", "قائمة مهام"), tint = Color.White)
                     }
 
                     // 4. أيقونة قلم التمييز (Highlight)
@@ -576,7 +576,7 @@ fun NoteEditorScreen(
                         showHighlightPicker = !showHighlightPicker
                         showColorPickerForText = false
                     }) {
-                        Icon(Icons.Default.BorderColor, contentDescription = "Highlight text", tint = Color(0xFFFFD740))
+                        Icon(Icons.Default.BorderColor, contentDescription = AppLanguage.text(context, "Highlight text", "تمييز النص"), tint = Color(0xFFFFD740))
                     }
 
                     // 5. أيقونة تلوين النص المحدد
@@ -584,7 +584,7 @@ fun NoteEditorScreen(
                         showColorPickerForText = !showColorPickerForText
                         showHighlightPicker = false
                     }) {
-                        Icon(Icons.Default.FormatColorText, contentDescription = "Text color", tint = Color(0xFF40C4FF))
+                        Icon(Icons.Default.FormatColorText, contentDescription = AppLanguage.text(context, "Text color", "لون النص"), tint = Color(0xFF40C4FF))
                     }
 
                     // 6. أيقونة A+ (تكبير حجم الخط)
@@ -635,7 +635,7 @@ fun NoteEditorScreen(
 
                     // 11. أيقونة القائمة النقطية (Bullet List)
                     IconButton(onClick = { webViewRef?.evaluateJavascript("document.execCommand('insertUnorderedList'); notifyEditorChanged();", null) }) {
-                        Icon(Icons.AutoMirrored.Filled.FormatListBulleted, contentDescription = "Bulleted list", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.FormatListBulleted, contentDescription = AppLanguage.text(context, "Bulleted list", "قائمة نقطية"), tint = Color.White)
                     }
 
                     // 12. اتجاه النص والمحاذاة (Alignment: يمين / وسط / يسار)
@@ -644,14 +644,14 @@ fun NoteEditorScreen(
                         alignState = 0
                         webViewRef?.evaluateJavascript("setTextDirection('rtl');", null)
                     }) {
-                        Text("RTL", color = if (textDirection == "rtl") Color(0xFF69F0AE) else Color.White, fontWeight = FontWeight.Bold)
+                        Text(AppLanguage.text(context, "RTL", "من اليمين لليسار"), color = if (textDirection == "rtl") Color(0xFF69F0AE) else Color.White, fontWeight = FontWeight.Bold)
                     }
                     TextButton(onClick = {
                         textDirection = "ltr"
                         alignState = 2
                         webViewRef?.evaluateJavascript("setTextDirection('ltr');", null)
                     }) {
-                        Text("LTR", color = if (textDirection == "ltr") Color(0xFF69F0AE) else Color.White, fontWeight = FontWeight.Bold)
+                        Text(AppLanguage.text(context, "LTR", "من اليسار لليمين"), color = if (textDirection == "ltr") Color(0xFF69F0AE) else Color.White, fontWeight = FontWeight.Bold)
                     }
 
                     IconButton(onClick = {
@@ -668,7 +668,7 @@ fun NoteEditorScreen(
                             1 -> Icons.Default.FormatAlignCenter
                             else -> Icons.AutoMirrored.Filled.FormatAlignLeft
                         }
-                        Icon(icon, contentDescription = "Alignment", tint = Color.White)
+                        Icon(icon, contentDescription = AppLanguage.text(context, "Alignment", "المحاذاة"), tint = Color.White)
                     }
                 }
 
@@ -681,12 +681,12 @@ fun NoteEditorScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Words: $wordCount  |  Characters: $charCount",
+                        text = AppLanguage.text(context, "Words: $wordCount  |  Characters: $charCount", "الكلمات: $wordCount  |  الأحرف: $charCount"),
                         color = Color.Gray,
                         fontSize = 12.sp
                     )
                     Text(
-                        text = "Reading time: ~${readingTimeSec} sec",
+                        text = AppLanguage.text(context, "Reading time: ~${readingTimeSec} sec", "وقت القراءة: نحو ${readingTimeSec} ثانية"),
                         color = Color.Gray,
                         fontSize = 12.sp
                     )
@@ -703,7 +703,7 @@ fun NoteEditorScreen(
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
-                    WebView(ctx).apply {
+                    WebView(activity).apply {
                         isFocusable = true
                         isFocusableInTouchMode = true
                         settings.javaScriptEnabled = true
@@ -1201,7 +1201,7 @@ fun NoteEditorScreen(
         AlertDialog(
             onDismissRequest = { showImageSourceDialog = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text("Insert Image", color = Color.White, fontWeight = FontWeight.Bold) },
+            title = { Text(AppLanguage.text(context, "Insert Image", "إدراج صورة"), color = Color.White, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -1214,7 +1214,7 @@ fun NoteEditorScreen(
                     ) {
                         Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color(0xFF69F0AE))
                         Spacer(Modifier.width(10.dp))
-                        Text("Choose from Gallery", color = Color.White)
+                        Text(AppLanguage.text(context, "Choose from Gallery", "اختيار من المعرض"), color = Color.White)
                     }
                     Button(
                         modifier = Modifier.fillMaxWidth(),
@@ -1226,13 +1226,13 @@ fun NoteEditorScreen(
                     ) {
                         Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = Color(0xFF40C4FF))
                         Spacer(Modifier.width(10.dp))
-                        Text("Take a New Photo", color = Color.White)
+                        Text(AppLanguage.text(context, "Take a New Photo", "التقاط صورة جديدة"), color = Color.White)
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showImageSourceDialog = false }) {
-                    Text("Cancel", color = Color.Gray)
+                    Text(AppLanguage.text(context, "Cancel", "إلغاء"), color = Color.Gray)
                 }
             }
         )
@@ -1246,12 +1246,12 @@ fun NoteEditorScreen(
         AlertDialog(
             onDismissRequest = { showReminderDialog = false },
             containerColor = Color(0xFF1E1E1E),
-            title = { Text("Note Reminder ⏰", color = Color.White, fontWeight = FontWeight.Bold) },
+            title = { Text(AppLanguage.text(context, "Note Reminder ⏰", "تذكير الملاحظة ⏰"), color = Color.White, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (reminderTime != null && reminderTime!! > System.currentTimeMillis()) {
                         Text(
-                            "Current reminder: ${reminderFormatter.format(Date(reminderTime!!))}",
+                            AppLanguage.text(context, "Current reminder: ${reminderFormatter.format(Date(reminderTime!!))}", "التذكير الحالي: ${reminderFormatter.format(Date(reminderTime!!))}"),
                             color = Color(0xFF69F0AE),
                             fontSize = 13.sp
                         )
@@ -1273,7 +1273,7 @@ fun NoteEditorScreen(
                                             }
                                             val trigger = chosen.timeInMillis
                                             if (trigger <= System.currentTimeMillis()) {
-                                                Toast.makeText(context, "Please select a future date & time.", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, AppLanguage.text(context, "Please select a future date & time.", "يرجى اختيار تاريخ ووقت في المستقبل."), Toast.LENGTH_SHORT).show()
                                             } else {
                                                 reminderTime = trigger
                                                 onScheduleReminder(
@@ -1300,15 +1300,15 @@ fun NoteEditorScreen(
                     ) {
                         Icon(Icons.Default.CalendarMonth, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Pick Exact Date & Time", fontWeight = FontWeight.Bold)
+                        Text(AppLanguage.text(context, "Pick Exact Date & Time", "اختيار التاريخ والوقت بدقة"), fontWeight = FontWeight.Bold)
                     }
 
                     HorizontalDivider(color = Color(0xFF2C2C2C))
-                    Text("Or quick reminder in minutes:", color = Color.LightGray, fontSize = 13.sp)
+                    Text(AppLanguage.text(context, "Or quick reminder in minutes:", "أو تذكير سريع بالدقائق:"), color = Color.LightGray, fontSize = 13.sp)
                     OutlinedTextField(
                         value = minutesFromNow,
                         onValueChange = { minutesFromNow = it.filter { ch -> ch.isDigit() } },
-                        label = { Text("Minutes from now") },
+                        label = { Text(AppLanguage.text(context, "Minutes from now", "عدد الدقائق من الآن")) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1329,7 +1329,7 @@ fun NoteEditorScreen(
                     )
                     showReminderDialog = false
                 }) {
-                    Text("Set Quick Timer")
+                    Text(AppLanguage.text(context, "Set Quick Timer", "ضبط مؤقت سريع"))
                 }
             },
             dismissButton = {
@@ -1338,14 +1338,14 @@ fun NoteEditorScreen(
                         TextButton(onClick = {
                             ReminderReceiver.cancelReminder(context, note.id)
                             reminderTime = null
-                            Toast.makeText(context, "Reminder cancelled", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, AppLanguage.text(context, "Reminder cancelled", "تم إلغاء التذكير"), Toast.LENGTH_SHORT).show()
                             showReminderDialog = false
                         }) {
-                            Text("Clear", color = Color(0xFFFF5252))
+                            Text(AppLanguage.text(context, "Clear", "مسح"), color = Color(0xFFFF5252))
                         }
                     }
                     TextButton(onClick = { showReminderDialog = false }) {
-                        Text("Cancel", color = Color.Gray)
+                        Text(AppLanguage.text(context, "Cancel", "إلغاء"), color = Color.Gray)
                     }
                 }
             }
@@ -1357,11 +1357,11 @@ fun NoteEditorScreen(
             onDismissRequest = { showPrivatePdfWarning = false },
             containerColor = Color(0xFF1E1E1E),
             title = {
-                Text("Export private note?", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(AppLanguage.text(context, "Export private note?", "تصدير الملاحظة الخاصة؟"), color = Color.White, fontWeight = FontWeight.Bold)
             },
             text = {
                 Text(
-                    "The PDF will be created outside the encrypted vault and will not be protected by the app passcode. Continue only if you want an external copy of this note.",
+                    AppLanguage.text(context, "The PDF will be created outside the encrypted vault and will not be protected by the app passcode. Continue only if you want an external copy of this note.", "سيتم إنشاء ملف PDF خارج الخزنة المشفّرة، ولن يكون محميًا برمز مرور التطبيق. تابع فقط إذا كنت تريد نسخة خارجية من هذه الملاحظة."),
                     color = Color.LightGray
                 )
             },
@@ -1370,12 +1370,12 @@ fun NoteEditorScreen(
                     showPrivatePdfWarning = false
                     launchPdfExport()
                 }) {
-                    Text("Continue", color = Color(0xFFFF8A65))
+                    Text(AppLanguage.text(context, "Continue", "متابعة"), color = Color(0xFFFF8A65))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showPrivatePdfWarning = false }) {
-                    Text("Cancel", color = Color.Gray)
+                    Text(AppLanguage.text(context, "Cancel", "إلغاء"), color = Color.Gray)
                 }
             }
         )
