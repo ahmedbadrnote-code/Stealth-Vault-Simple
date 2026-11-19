@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onVaultPickerStateChange = { isVaultPickerActive = it },
                     onVaultUnlockProgressChange = { isVaultUnlockInProgress = it },
+                    isVaultUnlockProgressActive = { isVaultUnlockInProgress },
                     openNoteId = pendingOpenNoteId.value,
                     onOpenNoteHandled = { handledId ->
                         if (pendingOpenNoteId.value == handledId) pendingOpenNoteId.value = null
@@ -184,6 +185,7 @@ fun StealthNotesApp(
     onVaultStateChange: (Boolean) -> Unit,
     onVaultPickerStateChange: (Boolean) -> Unit,
     onVaultUnlockProgressChange: (Boolean) -> Unit,
+    isVaultUnlockProgressActive: () -> Boolean,
     openNoteId: String?,
     onOpenNoteHandled: (String) -> Unit
 ) {
@@ -548,7 +550,7 @@ fun StealthNotesApp(
                                         false to e
                                     }
                                 }
-                                if (!activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                                if (!isVaultUnlockProgressActive() || !activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                                     SecurityCrypto.lockVaultSession(context)
                                     onVaultUnlockProgressChange(false)
                                     return@launch
@@ -572,7 +574,7 @@ fun StealthNotesApp(
                                     val recovery = withContext(Dispatchers.IO) {
                                         runCatching { VaultTransferManager.recoverPending(context) }
                                     }
-                                    if (recovery.isSuccess && activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                                    if (recovery.isSuccess && isVaultUnlockProgressActive() && activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                                         onVaultUnlockProgressChange(false)
                                         searchQuery = ""
                                         focusManager.clearFocus()
@@ -580,7 +582,7 @@ fun StealthNotesApp(
                                     } else {
                                         SecurityCrypto.lockVaultSession(context)
                                         onVaultUnlockProgressChange(false)
-                                        if (recovery.isFailure && activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                                        if (recovery.isFailure && isVaultUnlockProgressActive() && activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                                             Toast.makeText(
                                                 context,
                                                 AppLanguage.text(
