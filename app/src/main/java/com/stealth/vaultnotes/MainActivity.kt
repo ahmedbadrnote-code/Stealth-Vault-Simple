@@ -156,6 +156,10 @@ class MainActivity : ComponentActivity() {
             SecurityCrypto.lockVaultSession(this)
             isVaultOpenState.value = false
         }
+        // Change launcher aliases only after this Activity has left the foreground.
+        // Disabling the alias that launched the currently visible Activity can make
+        // Android remove that Activity, which looks like an unexpected app exit.
+        AppLanguage.updateLauncherAlias(this, AppLanguage.getLanguage(this))
         super.onStop()
     }
 
@@ -709,8 +713,10 @@ fun StealthNotesApp(
                 TextButton(onClick = {
                     showLanguageDialog = false
                     if (selectedLanguage != AppLanguage.getLanguage(context)) {
+                        // Persist and apply the in-app language immediately.
+                        // Launcher label is synchronized later in MainActivity.onStop(),
+                        // after the current launcher alias is no longer in the foreground.
                         AppLanguage.setLanguage(context, selectedLanguage)
-                        AppLanguage.updateLauncherAlias(context, selectedLanguage)
                         onLanguageChanged(selectedLanguage)
                     }
                 }) {
