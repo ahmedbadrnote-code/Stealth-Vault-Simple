@@ -3,7 +3,9 @@ package com.stealth.vaultnotes
 import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.content.BroadcastReceiver
 import androidx.activity.ComponentActivity
+import androidx.core.content.ContextCompat
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -164,6 +166,33 @@ fun SecretVaultScreen(
     var activePdfItem by remember { mutableStateOf<VaultFileItem?>(null) }
     var editingSecretNote by remember { mutableStateOf<NoteItem?>(null) }
     var pendingRestoreItems by remember { mutableStateOf<List<VaultFileItem>>(emptyList()) }
+
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(receiverContext: Context?, intent: Intent?) {
+                vaultFiles = StorageRepository.loadVaultFiles(context)
+                isBusy = false
+                busyMessage = ""
+                selectedIds.clear()
+                val succeeded = intent?.getBooleanExtra("success", false) == true
+                val message = if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) {
+                    if (succeeded) "اكتملت عملية نقل الملفات في الخلفية."
+                    else "انتهت عملية النقل مع وجود ملفات لم تكتمل؛ النسخ الأصلية المحفوظة داخل الخزنة لم تُحذف."
+                } else {
+                    if (succeeded) "The background file transfer is complete."
+                    else "The transfer ended with incomplete items; remaining vault originals were kept."
+                }
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            android.content.IntentFilter(VaultTransferService.ACTION_FINISHED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        onDispose { runCatching { context.unregisterReceiver(receiver) } }
+    }
     LaunchedEffect(currentTab) {
         currentSubFolder = savedSubFolders.firstOrNull() ?: "General"
         selectedIds.clear()
@@ -183,7 +212,7 @@ fun SecretVaultScreen(
         }
     }
 
-// استيراد وتشفير الملفات وحذف الأصل عبر SAF (Intent.ACTION_OPEN_DOCUMENT)
+// Background import is deliberately independent from this Compose screen's lifecycle.
     val safImportLauncher = rememberLauncherForActivityResult(SafOpenMultipleDocumentsContract()) { uris: List<Uri> ->
         onPickerStateChange(false)
         if (uris.isNotEmpty()) {
@@ -193,77 +222,63 @@ fun SecretVaultScreen(
                 else -> VaultMediaType.DOCUMENT
             }
             val targetFolder = currentSubFolder
-            isBusy = true
-            busyMessage = AppLanguage.text(context, "Moving ${uris.size} file(s) into the vault...", "جارٍ نقل ${uris.size} ملفًا إلى الخزنة...")
-            scope.launch {
-                val updated = vaultFiles.toMutableList()
-                val imported = mutableListOf<Pair<Uri, VaultFileItem>>()
-                val savedOk = withContext(Dispatchers.IO) {
-                    uris.forEach { uri ->
-                        val item = SecurityCrypto.importAndMoveFileViaSAF(context, uri, targetType, targetFolder)
-                        if (item != null) {
-                            updated.add(item)
-                            imported.add(uri to item)
-                        }
-                    }
-                    if (imported.isNotEmpty() && StorageRepository.saveVaultFiles(context, updated)) {
+            val persistableUris = uris.filter { uri ->
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                    true
+                } catch (_: SecurityException) {
+                    try {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
                         true
-                    } else {
-                        imported.forEach { (_, item) ->
-                            File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName).delete()
-                        }
+                    } catch (_: SecurityException) {
                         false
                     }
                 }
-                if (savedOk) {
-                    vaultFiles = updated
-                    val deletedOriginals = withContext(Dispatchers.IO) {
-                        var count = 0
-                        imported.forEach { (uri, _) ->
-                            if (SecurityCrypto.deleteOriginalDocument(context, uri)) count++
-                        }
-                        count
-                    }
-                    val originalsRemain = imported.size - deletedOriginals
-                    val failedImports = uris.size - imported.size
-                    val message = if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) {
-                        buildString {
-                            append("تم نقل ${imported.size} من أصل ${uris.size} ملفًا إلى الخزنة.")
-                            if (originalsRemain > 0) {
-                                append(" تعذّر حذف ${originalsRemain} نسخة أصلية، وما زالت في موقعها الأصلي.")
-                            } else if (imported.isNotEmpty()) {
-                                append(" تمت إزالة النسخ الأصلية المحددة من موقعها.")
-                            }
-                            if (failedImports > 0) {
-                                append(" تعذّر استيراد ${failedImports} ملفًا محددًا؛ وتم الاحتفاظ بنسخه الأصلية.")
-                            }
-                        }
-                    } else {
-                        buildString {
-                            append("${imported.size}/${uris.size} file(s) moved into the vault.")
-                            if (originalsRemain > 0) {
-                                append(" ${originalsRemain} original file(s) could not be deleted and remain in their original location.")
-                            } else if (imported.isNotEmpty()) {
-                                append(" The selected originals were removed from their source location.")
-                            }
-                            if (failedImports > 0) {
-                                append(" ${failedImports} selected file(s) could not be imported; their originals were kept.")
-                            }
-                        }
-                    }
-                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(context, AppLanguage.text(context, "Could not import files. Originals were kept.", "تعذّر استيراد الملفات. تم الاحتفاظ بالنسخ الأصلية."), Toast.LENGTH_LONG).show()
+            }
+            if (persistableUris.isNotEmpty()) {
+                isBusy = true
+                busyMessage = AppLanguage.text(
+                    context,
+                    "Moving ${persistableUris.size} file(s) into the vault...",
+                    "جارٍ نقل ${persistableUris.size} ملفًا إلى الخزنة..."
+                )
+                if (!VaultTransferManager.startImport(context, persistableUris, targetType, targetFolder)) {
+                    isBusy = false
+                    busyMessage = ""
+                    Toast.makeText(
+                        context,
+                        AppLanguage.text(context, "Could not start background import. Originals were kept.", "تعذّر بدء الاستيراد في الخلفية. تم الاحتفاظ بالملفات الأصلية."),
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else if (persistableUris.size < uris.size) {
+                    Toast.makeText(
+                        context,
+                        AppLanguage.text(context, "Some selected files could not receive persistent access and were skipped.", "تعذّر منح صلاحية دائمة لبعض الملفات المحددة، لذلك تم تخطيها."),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
-                isBusy = false
+            } else {
+                Toast.makeText(
+                    context,
+                    AppLanguage.text(context, "The selected provider did not grant background file access. No files were moved.", "مصدر الملفات لم يمنح صلاحية الوصول في الخلفية. لم يتم نقل أي ملفات."),
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
 
-    // استرجاع الملفات (Unhide / Restore) إلى التخزين الخارجي
+    // Background export continues independently after the vault UI is locked.
     val safRestoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri: Uri? ->
         onPickerStateChange(false)
-        if (treeUri != null) {
+        val itemsToRestore = pendingRestoreItems
+        pendingRestoreItems = emptyList()
+        if (treeUri != null && itemsToRestore.isNotEmpty()) {
             val grantFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             val persisted = try {
                 context.contentResolver.takePersistableUriPermission(treeUri, grantFlags)
@@ -279,57 +294,27 @@ fun SecretVaultScreen(
                     } catch (_: Exception) {}
                 }
                 restoreLocationPrefs.edit().putString("last_restore_tree_uri", treeUri.toString()).apply()
-            }
-        }
-        val itemsToRestore = pendingRestoreItems
-        pendingRestoreItems = emptyList()
-        if (treeUri != null && itemsToRestore.isNotEmpty()) {
-            isBusy = true
-            busyMessage = AppLanguage.text(context, "Restoring ${itemsToRestore.size} file(s)...", "جارٍ استعادة ${itemsToRestore.size} ملفًا...")
-            scope.launch {
-                val docDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
-                val updated = vaultFiles.toMutableList()
-                var restoredCount = 0
-                val encryptedFilesToDelete = mutableListOf<File>()
-
-                val savedOk = withContext(Dispatchers.IO) {
-                    itemsToRestore.forEach { item ->
-                        val encFile = File(StorageRepository.getVaultBlobDir(context), item.encryptedFileName)
-                        if (encFile.exists()) {
-                            var createdDocument: androidx.documentfile.provider.DocumentFile? = null
-                            try {
-                                createdDocument = docDir?.createFile(item.mimeType, item.originalName)
-                                    ?: throw IllegalStateException("Unable to create destination file")
-                                val output = context.contentResolver.openOutputStream(createdDocument.uri)
-                                    ?: throw IllegalStateException("Unable to open destination")
-                                val countingOutput = CountingOutputStream(output)
-                                countingOutput.use { stream ->
-                                    SecurityCrypto.decryptFileToOutputStream(context, item, stream)
-                                }
-                                check(item.sizeBytes <= 0L || countingOutput.bytesWritten == item.sizeBytes) {
-                                    "Restored file size does not match the stored original size"
-                                }
-                                updated.removeAll { it.id == item.id }
-                                encryptedFilesToDelete.add(encFile)
-                                restoredCount++
-                            } catch (_: Exception) {
-                                createdDocument?.delete()
-                            }
-                        }
-                    }
-                    StorageRepository.saveVaultFiles(context, updated).also { ok ->
-                        if (ok) encryptedFilesToDelete.forEach { it.delete() }
-                    }
+                isBusy = true
+                busyMessage = AppLanguage.text(
+                    context,
+                    "Restoring ${itemsToRestore.size} file(s)...",
+                    "جارٍ استعادة ${itemsToRestore.size} ملفًا..."
+                )
+                if (!VaultTransferManager.startExport(context, itemsToRestore, treeUri)) {
+                    isBusy = false
+                    busyMessage = ""
+                    Toast.makeText(
+                        context,
+                        AppLanguage.text(context, "Could not start background export. Files remain in the vault.", "تعذّر بدء الإخراج في الخلفية. الملفات ما زالت داخل الخزنة."),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
-
-                if (savedOk) {
-                    vaultFiles = updated
-                    Toast.makeText(context, AppLanguage.text(context, "$restoredCount file(s) restored to your device ✅", "تمت استعادة $restoredCount ملفًا إلى جهازك ✅"), Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, AppLanguage.text(context, "Could not update vault records. Any files already copied remain on your device, and their originals remain in the vault.", "تعذّر تحديث سجلات الخزنة. الملفات التي نُسخت موجودة على جهازك، وما زالت أصولها داخل الخزنة."), Toast.LENGTH_LONG).show()
-                }
-                selectedIds.clear()
-                isBusy = false
+            } else {
+                Toast.makeText(
+                    context,
+                    AppLanguage.text(context, "The destination did not grant persistent access. Files remain in the vault.", "المجلد المحدد لم يمنح صلاحية دائمة. الملفات ما زالت داخل الخزنة."),
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
