@@ -191,6 +191,7 @@ object VaultTransferManager {
         val journalFiles = context.filesDir.listFiles()?.filter {
             it.name.startsWith(JOURNAL_PREFIX) && it.name.endsWith(".enc")
         }.orEmpty()
+        if (journalFiles.isEmpty()) return
         // A missing index is not proof that an export committed. Preserve every
         // referenced blob and journal rather than risking deletion after index loss.
         if (!File(context.filesDir, "vault_index.enc").exists() && journalFiles.isNotEmpty()) return
