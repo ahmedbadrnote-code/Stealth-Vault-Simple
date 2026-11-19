@@ -170,6 +170,9 @@ fun SecretVaultScreen(
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(receiverContext: Context?, intent: Intent?) {
+                // The service may finish at the same moment the UI is being locked.
+                // Never touch the encrypted index from this callback after lock.
+                if (!SecurityCrypto.isVaultSessionUnlocked()) return
                 val succeeded = intent?.getBooleanExtra("success", false) == true
                 scope.launch {
                     withContext(Dispatchers.IO) {
