@@ -375,6 +375,7 @@ fun StealthNotesApp(
     if (isVaultOpen) {
         SecretVaultScreen(
             activity = activity,
+            printContext = printContext,
             onExitVault = { onVaultStateChange(false) },
             onPickerStateChange = onVaultPickerStateChange
         )
