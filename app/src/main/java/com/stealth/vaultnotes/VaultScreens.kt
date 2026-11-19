@@ -120,6 +120,7 @@ class SafOpenMultipleDocumentsContract : ActivityResultContract<Array<String>, L
 @Composable
 fun SecretVaultScreen(
     activity: ComponentActivity,
+    printContext: Context,
     onExitVault: () -> Unit,
     onPickerStateChange: (Boolean) -> Unit
 ) {
@@ -342,6 +343,7 @@ fun SecretVaultScreen(
     editingSecretNote?.let { secretNote ->
         NoteEditorScreen(
             activity = activity,
+            printContext = printContext,
             note = secretNote,
             onSave = { saved ->
                 val list = secretNotes.toMutableList()
