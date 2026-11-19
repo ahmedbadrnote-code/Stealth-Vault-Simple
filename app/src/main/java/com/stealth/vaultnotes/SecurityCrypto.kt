@@ -69,6 +69,8 @@ object SecurityCrypto {
         transferKeys.remove(transferId)
     }
 
+    fun hasActiveTransfers(): Boolean = transferKeys.isNotEmpty()
+
     internal fun activeTransferKey(context: Context): SecretKey = synchronized(sessionLock) {
         check(vaultSessionUnlocked) { "Vault session is locked" }
         cachedAesKey ?: throw IllegalStateException("Vault key is not ready")
