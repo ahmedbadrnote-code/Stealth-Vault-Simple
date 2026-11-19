@@ -1451,6 +1451,57 @@ private fun decodeVaultPdfThumbnail(context: Context, item: VaultFileItem, targe
     }
 }
 
+/**
+ * Decodes a sampled image and applies its EXIF orientation for display only.
+ * The encrypted/original file is never rewritten, so importing and restoring
+ * images remain byte-for-byte unchanged.
+ */
+private fun decodeExifOrientedBitmap(file: File, targetSize: Int): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+    var sample = 1
+    while (bounds.outWidth / sample > targetSize || bounds.outHeight / sample > targetSize) {
+        sample *= 2
+    }
+    val decoded = BitmapFactory.decodeFile(
+        file.absolutePath,
+        BitmapFactory.Options().apply { inSampleSize = sample }
+    ) ?: return null
+
+    return try {
+        val orientation = runCatching {
+            android.media.ExifInterface(file.absolutePath).getAttributeInt(
+                android.media.ExifInterface.TAG_ORIENTATION,
+                android.media.ExifInterface.ORIENTATION_NORMAL
+            )
+        }.getOrDefault(android.media.ExifInterface.ORIENTATION_NORMAL)
+
+        val matrix = android.graphics.Matrix()
+        when (orientation) {
+            android.media.ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
+            android.media.ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.setScale(1f, -1f)
+            android.media.ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.setRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
+            android.media.ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.setRotate(-90f)
+                matrix.postScale(-1f, 1f)
+            }
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(-90f)
+            else -> return decoded
+        }
+        Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+            .also { if (it !== decoded) decoded.recycle() }
+    } catch (_: Exception) {
+        decoded
+    }
+}
+
 private fun decodeVaultSampledBitmap(context: Context, item: VaultFileItem, targetSize: Int): Bitmap? {
     var decryptedFile: File? = null
     return try {
@@ -1458,16 +1509,7 @@ private fun decodeVaultSampledBitmap(context: Context, item: VaultFileItem, targ
         if (decryptedFile == null || !decryptedFile.exists()) {
             null
         } else {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(decryptedFile.absolutePath, bounds)
-            var sample = 1
-            while (bounds.outWidth / sample > targetSize || bounds.outHeight / sample > targetSize) {
-                sample *= 2
-            }
-            BitmapFactory.decodeFile(
-                decryptedFile.absolutePath,
-                BitmapFactory.Options().apply { inSampleSize = sample }
-            )
+            decodeExifOrientedBitmap(decryptedFile, targetSize)
         }
     } catch (_: Exception) {
         null
@@ -1520,11 +1562,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                 if (item.mediaType == VaultMediaType.PHOTO) {
                     val bitmap by produceState<Bitmap?>(initialValue = null, key1 = decryptedFile!!.absolutePath) {
                         value = withContext(Dispatchers.IO) {
-                            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                            BitmapFactory.decodeFile(decryptedFile!!.absolutePath, bounds)
-                            var sample = 1
-                            while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
-                            BitmapFactory.decodeFile(decryptedFile!!.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
+                            decodeExifOrientedBitmap(decryptedFile!!, 2048)
                         }
                     }
 
