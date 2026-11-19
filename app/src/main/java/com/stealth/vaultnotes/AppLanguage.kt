@@ -4,6 +4,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Build
+import android.util.Log
 import java.util.Locale
 
 /**
@@ -40,18 +42,52 @@ object AppLanguage {
         val englishAlias = ComponentName(context, "${context.packageName}.MainActivityEnglish")
         val useArabic = language != ENGLISH
 
-        // Enable the destination launcher entry before disabling the current one.
-        // This avoids a transient state with no enabled launcher activity.
-        packageManager.setComponentEnabledSetting(
-            if (useArabic) arabicAlias else englishAlias,
-            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-            PackageManager.DONT_KILL_APP
-        )
-        packageManager.setComponentEnabledSetting(
-            if (useArabic) englishAlias else arabicAlias,
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            PackageManager.DONT_KILL_APP
-        )
+        val destinationAlias = if (useArabic) arabicAlias else englishAlias
+        val currentAlias = if (useArabic) englishAlias else arabicAlias
+        val flags = PackageManager.DONT_KILL_APP or PackageManager.SYNCHRONOUS
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // Android 13+: update both launcher entries atomically.
+                packageManager.setComponentEnabledSettings(
+                    listOf(
+                        PackageManager.ComponentEnabledSetting(
+                            destinationAlias,
+                            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                            flags
+                        ),
+                        PackageManager.ComponentEnabledSetting(
+                            currentAlias,
+                            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                            flags
+                        )
+                    )
+                )
+            } else {
+                // Older Android versions: enable the destination before disabling
+                // the previous entry, with synchronous package-manager updates.
+                packageManager.setComponentEnabledSetting(
+                    destinationAlias,
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    flags
+                )
+                packageManager.setComponentEnabledSetting(
+                    currentAlias,
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    flags
+                )
+            }
+
+            Log.i(
+                "AppLanguage",
+                "Launcher alias updated: language=" + language +
+                    ", Arabic=" + packageManager.getComponentEnabledSetting(arabicAlias) +
+                    ", English=" + packageManager.getComponentEnabledSetting(englishAlias)
+            )
+        } catch (error: Exception) {
+            // A launcher-label update must never crash or interrupt the notes app.
+            Log.e("AppLanguage", "Could not update launcher alias for " + language, error)
+        }
     }
 
     fun wrap(context: Context): Context {
