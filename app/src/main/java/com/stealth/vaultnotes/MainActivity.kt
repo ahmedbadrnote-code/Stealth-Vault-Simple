@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
     private var originalBaseContext: Context? = null
     private var panicSensor: PanicSensor? = null
     private val isVaultOpenState = mutableStateOf(false)
+    private val appLanguageState = mutableStateOf(AppLanguage.ARABIC)
     private val pendingOpenNoteId = mutableStateOf<String?>(null)
     @Volatile private var isVaultPickerActive = false
 
@@ -66,6 +67,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appLanguageState.value = AppLanguage.getLanguage(this)
         // السماح بلقطات الشاشة في Debug أثناء الاختبار فقط.
         // تظل الحماية مفعّلة تلقائيًا في Release لمنع لقطات الشاشة ومعاينة التطبيقات الحديثة.
         if (!BuildConfig.DEBUG) {
@@ -89,7 +91,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val appDirection = if (AppLanguage.getLanguage(this@MainActivity) == AppLanguage.ARABIC) {
+            val appDirection = if (appLanguageState.value == AppLanguage.ARABIC) {
                 LayoutDirection.Rtl
             } else {
                 LayoutDirection.Ltr
@@ -98,6 +100,7 @@ class MainActivity : ComponentActivity() {
                 MaterialTheme(colorScheme = darkColorScheme()) {
                     StealthNotesApp(
                     activity = this@MainActivity,
+                    onLanguageChanged = { language -> appLanguageState.value = language },
                     printContext = originalBaseContext ?: this@MainActivity,
                     isVaultOpen = isVaultOpenState.value,
                     onVaultStateChange = { open ->
@@ -168,6 +171,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun StealthNotesApp(
     activity: ComponentActivity,
+    onLanguageChanged: (String) -> Unit,
     printContext: Context,
     isVaultOpen: Boolean,
     onVaultStateChange: (Boolean) -> Unit,
@@ -707,7 +711,7 @@ fun StealthNotesApp(
                     if (selectedLanguage != AppLanguage.getLanguage(context)) {
                         AppLanguage.setLanguage(context, selectedLanguage)
                         AppLanguage.updateLauncherAlias(context, selectedLanguage)
-                        activity.recreate()
+                        onLanguageChanged(selectedLanguage)
                     }
                 }) {
                     Text(if (selectedLanguage == AppLanguage.ARABIC) "تطبيق" else AppLanguage.text(context, "Apply", "تطبيق"))

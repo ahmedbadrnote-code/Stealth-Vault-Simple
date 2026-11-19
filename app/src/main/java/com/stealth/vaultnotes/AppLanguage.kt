@@ -40,14 +40,16 @@ object AppLanguage {
         val englishAlias = ComponentName(context, "${context.packageName}.MainActivityEnglish")
         val useArabic = language != ENGLISH
 
+        // Enable the destination launcher entry before disabling the current one.
+        // This avoids a transient state with no enabled launcher activity.
         packageManager.setComponentEnabledSetting(
-            arabicAlias,
-            if (useArabic) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            if (useArabic) arabicAlias else englishAlias,
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
             PackageManager.DONT_KILL_APP
         )
         packageManager.setComponentEnabledSetting(
-            englishAlias,
-            if (useArabic) PackageManager.COMPONENT_ENABLED_STATE_DISABLED else PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            if (useArabic) englishAlias else arabicAlias,
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
             PackageManager.DONT_KILL_APP
         )
     }
