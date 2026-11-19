@@ -556,9 +556,26 @@ fun StealthNotesApp(
                                     ).show()
                                     focusManager.clearFocus()
                                 } else if (verification.first) {
-                                    searchQuery = ""
-                                    focusManager.clearFocus()
-                                    onVaultStateChange(true)
+                                    val recovery = withContext(Dispatchers.IO) {
+                                        runCatching { VaultTransferManager.recoverPending(context) }
+                                    }
+                                    if (recovery.isSuccess) {
+                                        searchQuery = ""
+                                        focusManager.clearFocus()
+                                        onVaultStateChange(true)
+                                    } else {
+                                        SecurityCrypto.lockVaultSession(context)
+                                        Toast.makeText(
+                                            context,
+                                            AppLanguage.text(
+                                                context,
+                                                "The vault could not safely recover an interrupted file transfer. Your stored files were not intentionally removed.",
+                                                "تعذّر استرداد عملية نقل ملفات متوقفة بأمان. لم يتم حذف الملفات المخزنة عمدًا."
+                                            ),
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        focusManager.clearFocus()
+                                    }
                                 } else {
                                     if (verification.second != null) {
                                         Toast.makeText(
