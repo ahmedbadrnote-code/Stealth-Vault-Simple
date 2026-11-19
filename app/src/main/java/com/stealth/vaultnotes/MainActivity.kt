@@ -218,7 +218,11 @@ fun StealthNotesApp(
             val message = if (granted) {
                 AppLanguage.text(context, "Note reminder scheduled ⏰", "تم ضبط تذكير الملاحظة ⏰")
             } else {
-                "Reminder time saved, but notifications are disabled. Enable them in Settings."
+                AppLanguage.text(
+                    context,
+                    "Reminder time saved, but notifications are disabled. Enable them in Settings.",
+                    "تم حفظ وقت التذكير، لكن الإشعارات غير مفعّلة. فعّلها من الإعدادات."
+                )
             }
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         } else if (!granted) {
@@ -702,6 +706,7 @@ fun StealthNotesApp(
                     showLanguageDialog = false
                     if (selectedLanguage != AppLanguage.getLanguage(context)) {
                         AppLanguage.setLanguage(context, selectedLanguage)
+                        AppLanguage.updateLauncherAlias(context, selectedLanguage)
                         activity.recreate()
                     }
                 }) {

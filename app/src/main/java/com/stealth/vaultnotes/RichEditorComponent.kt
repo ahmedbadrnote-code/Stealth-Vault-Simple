@@ -307,12 +307,11 @@ fun NoteEditorScreen(
                 ).show()
             } catch (error: Exception) {
                 Log.e("StealthVaultPDF", "Failed to start A4 PDF export", error)
-                val detail = error.localizedMessage?.takeIf { it.isNotBlank() }
-                val message = if (detail != null) {
-                    "Could not prepare PDF: $detail"
-                } else {
-                    "Could not prepare the PDF for printing."
-                }
+                val message = AppLanguage.text(
+                    context,
+                    "Could not prepare the PDF for printing. Please try again.",
+                    "تعذّر تجهيز ملف PDF للطباعة. حاول مرة أخرى."
+                )
                 Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             }
         }

@@ -1350,7 +1350,12 @@ private fun VaultDocumentThumbnail(item: VaultFileItem, modifier: Modifier = Mod
         } else {
             Box(modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF303030)),
                 contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.PictureAsPdf, "PDF document", tint = Color(0xFF69F0AE), modifier = Modifier.size(40.dp))
+                Icon(
+                    Icons.Default.PictureAsPdf,
+                    AppLanguage.text(context, "PDF document", "ملف PDF"),
+                    tint = Color(0xFF69F0AE),
+                    modifier = Modifier.size(40.dp)
+                )
             }
         }
     }

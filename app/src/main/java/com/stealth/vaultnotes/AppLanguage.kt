@@ -1,6 +1,8 @@
 package com.stealth.vaultnotes
 
+import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import java.util.Locale
 
@@ -30,6 +32,24 @@ object AppLanguage {
             .edit()
             .putString(LANGUAGE_KEY, normalized)
             .apply()
+    }
+
+    fun updateLauncherAlias(context: Context, language: String) {
+        val packageManager = context.packageManager
+        val arabicAlias = ComponentName(context, "${context.packageName}.MainActivityArabic")
+        val englishAlias = ComponentName(context, "${context.packageName}.MainActivityEnglish")
+        val useArabic = language != ENGLISH
+
+        packageManager.setComponentEnabledSetting(
+            arabicAlias,
+            if (useArabic) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            PackageManager.DONT_KILL_APP
+        )
+        packageManager.setComponentEnabledSetting(
+            englishAlias,
+            if (useArabic) PackageManager.COMPONENT_ENABLED_STATE_DISABLED else PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            PackageManager.DONT_KILL_APP
+        )
     }
 
     fun wrap(context: Context): Context {
