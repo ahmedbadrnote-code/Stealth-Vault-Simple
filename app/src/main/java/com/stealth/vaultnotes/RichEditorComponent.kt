@@ -246,12 +246,13 @@ fun NoteEditorScreen(
     }
 
     fun persistAndExit() {
-        if (discardIfEmpty && !hasMeaningfulContent()) {
+        if (discardIfEmpty && !hasBeenPersisted && !hasMeaningfulContent()) {
             onBack()
             return
         }
         try {
             onSave(buildUpdatedNote())
+            hasBeenPersisted = true
             Toast.makeText(context, AppLanguage.text(context, "Note saved successfully ✅", "تم حفظ الملاحظة بنجاح ✅"), Toast.LENGTH_SHORT).show()
             onBack()
         } catch (_: Exception) {
@@ -364,6 +365,7 @@ fun NoteEditorScreen(
         if (!discardIfEmpty || hasMeaningfulContent()) {
             try {
                 onSave(buildUpdatedNote())
+                hasBeenPersisted = true
             } catch (_: Exception) {
                 Toast.makeText(context, AppLanguage.text(context, "Could not auto-save this note. Reopen it and try saving again.", "تعذّر الحفظ التلقائي لهذه الملاحظة. افتحها مجددًا وحاول الحفظ."), Toast.LENGTH_LONG).show()
             }
