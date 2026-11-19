@@ -321,7 +321,9 @@ class VaultTransferService : Service() {
         journalFile: File,
         key: SecretKey
     ): Boolean {
-        val files = StorageRepository.loadVaultFilesForTransfer(this, key)
+        // Read once before touching sources. A corrupt/unreadable index must never
+        // be replaced by a newly constructed partial list.
+        StorageRepository.loadVaultFilesForTransfer(this, key)
             ?: throw IllegalStateException("Vault index is unreadable")
         val type = VaultMediaType.valueOf(journal.mediaType ?: return false)
         var completed = 0
@@ -332,13 +334,17 @@ class VaultTransferService : Service() {
             val item = SecurityCrypto.importAndMoveFileViaSAF(
                 this, uri, type, journal.subFolder ?: "General", prefix
             ) ?: return@entryLoop
-            val updated = files.toMutableList().apply { add(item) }
-            if (!StorageRepository.saveVaultFilesForTransfer(this, updated, key)) {
+
+            // Merge into the latest index under StorageRepository's shared lock so
+            // a concurrent app lifecycle transition cannot overwrite unrelated rows.
+            val saved = StorageRepository.updateVaultFilesForTransfer(this, key) { current ->
+                current.toMutableList().apply { add(item) }
+            }
+            if (!saved) {
                 File(StorageRepository.getVaultBlobDir(this), item.encryptedFileName).delete()
                 return@entryLoop
             }
-            files.clear()
-            files.addAll(updated)
+
             entry.itemId = item.id
             entry.state = "INDEXED"
             VaultTransferManager.writeJournal(journalFile, journal, key)
@@ -358,18 +364,22 @@ class VaultTransferService : Service() {
     ): Boolean {
         val destinationUri = journal.destinationTreeUri?.let(Uri::parse) ?: return false
         val destination = DocumentFile.fromTreeUri(this, destinationUri) ?: return false
-        val files = StorageRepository.loadVaultFilesForTransfer(this, key)
+        StorageRepository.loadVaultFilesForTransfer(this, key)
             ?: throw IllegalStateException("Vault index is unreadable")
         var completed = 0
         journal.entries.forEachIndexed { index, entry ->
             val item = journal.selectedItems.firstOrNull { it.id == entry.itemId } ?: return@forEachIndexed
-            if (files.none { it.id == item.id }) {
+            val latestIndex = StorageRepository.loadVaultFilesForTransfer(this, key)
+                ?: throw IllegalStateException("Vault index is unreadable")
+            if (latestIndex.none { it.id == item.id }) {
                 entry.state = "COMMITTED"
                 VaultTransferManager.writeJournal(journalFile, journal, key)
                 completed++
                 return@forEachIndexed
             }
-            val created = destination.createFile(item.mimeType, entry.temporaryName ?: return@forEachIndexed)
+
+            val temporaryName = entry.temporaryName ?: return@forEachIndexed
+            val created = destination.createFile(item.mimeType, temporaryName)
                 ?: return@forEachIndexed
             entry.targetUri = created.uri.toString()
             entry.state = "COPYING"
@@ -386,10 +396,12 @@ class VaultTransferService : Service() {
                 entry.state = "OUTPUT_COMPLETE"
                 VaultTransferManager.writeJournal(journalFile, journal, key)
 
-                val updated = files.filterNot { it.id == item.id }
-                if (StorageRepository.saveVaultFilesForTransfer(this, updated, key)) {
-                    files.clear()
-                    files.addAll(updated)
+                // Remove only this selected item, merging against the latest index.
+                // The blob is deleted only after the index commit succeeds.
+                val indexSaved = StorageRepository.updateVaultFilesForTransfer(this, key) { current ->
+                    current.filterNot { it.id == item.id }
+                }
+                if (indexSaved) {
                     File(StorageRepository.getVaultBlobDir(this), item.encryptedFileName).delete()
                     entry.state = "COMMITTED"
                     VaultTransferManager.writeJournal(journalFile, journal, key)
