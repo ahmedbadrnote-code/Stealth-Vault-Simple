@@ -541,7 +541,21 @@ fun StealthNotesApp(
                                         false to e
                                     }
                                 }
-                                if (verification.first) {
+                                if (verification.first && SecurityCrypto.hasActiveTransfers()) {
+                                    // Do not allow concurrent vault edits while the service is
+                                    // committing a transfer against the encrypted index.
+                                    SecurityCrypto.lockVaultSession(context)
+                                    Toast.makeText(
+                                        context,
+                                        AppLanguage.text(
+                                            context,
+                                            "A background file transfer is still running. Please wait until it finishes before reopening the vault.",
+                                            "ما زالت عملية نقل ملفات تعمل في الخلفية. انتظر حتى تنتهي قبل فتح الخزنة مرة أخرى."
+                                        ),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    focusManager.clearFocus()
+                                } else if (verification.first) {
                                     searchQuery = ""
                                     focusManager.clearFocus()
                                     onVaultStateChange(true)
