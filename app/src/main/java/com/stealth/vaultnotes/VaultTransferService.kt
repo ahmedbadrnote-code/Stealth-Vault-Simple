@@ -1,5 +1,6 @@
 package com.stealth.vaultnotes
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -491,7 +492,17 @@ class VaultTransferService : Service() {
             val manager = getSystemService(NotificationManager::class.java)
             if (manager.getNotificationChannel(CHANNEL_ID) == null) {
                 manager.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "Background activity", NotificationManager.IMPORTANCE_LOW)
+                    NotificationChannel(
+                        CHANNEL_ID,
+                        "Background activity",
+                        NotificationManager.IMPORTANCE_LOW
+                    ).apply {
+                        setSound(null, null)
+                        enableVibration(false)
+                        enableLights(false)
+                        setShowBadge(false)
+                        lockscreenVisibility = Notification.VISIBILITY_SECRET
+                    }
                 )
             }
         }
