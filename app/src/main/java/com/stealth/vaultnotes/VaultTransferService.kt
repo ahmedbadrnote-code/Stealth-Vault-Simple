@@ -316,14 +316,21 @@ class VaultTransferService : Service() {
             .setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (_: Exception) {
+            SecurityCrypto.finishTransferKey(transferId)
+            sendTransferFinished(false, "TRANSFER")
+            stopSelf(startId)
+            return START_NOT_STICKY
         }
 
         val key = SecurityCrypto.transferKey(transferId)
