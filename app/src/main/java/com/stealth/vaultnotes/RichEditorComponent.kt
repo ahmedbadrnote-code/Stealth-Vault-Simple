@@ -703,7 +703,7 @@ fun NoteEditorScreen(
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
-                    WebView(ctx).apply {
+                    WebView(activity).apply {
                         isFocusable = true
                         isFocusableInTouchMode = true
                         settings.javaScriptEnabled = true
