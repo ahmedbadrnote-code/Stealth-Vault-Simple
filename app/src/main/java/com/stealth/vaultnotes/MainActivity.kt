@@ -53,12 +53,14 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
+    private var originalBaseContext: Context? = null
     private var panicSensor: PanicSensor? = null
     private val isVaultOpenState = mutableStateOf(false)
     private val pendingOpenNoteId = mutableStateOf<String?>(null)
     @Volatile private var isVaultPickerActive = false
 
     override fun attachBaseContext(newBase: Context) {
+        originalBaseContext = newBase
         super.attachBaseContext(AppLanguage.wrap(newBase))
     }
 
@@ -381,6 +383,7 @@ fun StealthNotesApp(
     activeNoteForEdit?.let { note ->
         NoteEditorScreen(
             activity = activity,
+            printContext = originalBaseContext ?: activity,
             note = note,
             onSave = { updated ->
                 val list = publicNotes.toMutableList()
