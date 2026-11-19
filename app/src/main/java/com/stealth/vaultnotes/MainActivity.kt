@@ -194,6 +194,7 @@ fun StealthNotesApp(
     var showTrashBin by remember { mutableStateOf(false) }
     var showEmptyPublicTrashDialog by remember { mutableStateOf(false) }
     var activeNoteForEdit by remember { mutableStateOf<NoteItem?>(null) }
+    var newNoteId by remember { mutableStateOf<String?>(null) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var selectedLanguage by remember { mutableStateOf(AppLanguage.getLanguage(context)) }
 
@@ -416,7 +417,8 @@ fun StealthNotesApp(
                     throw IllegalStateException("Failed to save public note")
                 }
             },
-            onBack = { activeNoteForEdit = null },
+            onBack = { activeNoteForEdit = null; newNoteId = null },
+            discardIfEmpty = note.id == newNoteId,
             onScheduleReminder = { reminderNote, timeMillis ->
                 if (Build.VERSION.SDK_INT >= 33 &&
                     context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -492,7 +494,11 @@ fun StealthNotesApp(
                 FloatingActionButton(
                     containerColor = Color(0xFF69F0AE),
                     contentColor = Color.Black,
-                    onClick = { activeNoteForEdit = NoteItem() }
+                    onClick = {
+                        val newNote = NoteItem()
+                        newNoteId = newNote.id
+                        activeNoteForEdit = newNote
+                    }
                 ) {
                     Icon(Icons.Default.Add, contentDescription = AppLanguage.text(context, "New note", "ملاحظة جديدة"))
                 }

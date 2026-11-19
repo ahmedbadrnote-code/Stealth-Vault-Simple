@@ -359,7 +359,8 @@ fun SecretVaultScreen(
             },
             onBack = { editingSecretNote = null },
             onScheduleReminder = { _, _ -> },
-            allowReminders = false
+            allowReminders = false,
+            discardIfEmpty = secretNote.id !in secretNotes.map { it.id }
         )
         return
     }

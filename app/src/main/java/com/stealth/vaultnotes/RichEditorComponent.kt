@@ -87,7 +87,8 @@ fun NoteEditorScreen(
     onSave: (NoteItem) -> Unit,
     onBack: () -> Unit,
     onScheduleReminder: (NoteItem, Long) -> Unit,
-    allowReminders: Boolean = true
+    allowReminders: Boolean = true,
+    discardIfEmpty: Boolean = false
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -122,6 +123,7 @@ fun NoteEditorScreen(
         mutableStateListOf(*initial.toTypedArray())
     }
     var currentStrokePoints by remember { mutableStateOf<List<Pair<Float, Float>>>(emptyList()) }
+    var hasBeenPersisted by remember(note.id) { mutableStateOf(!discardIfEmpty) }
 
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     val latestHtml = remember(note.id) { AtomicReference(note.htmlContent) }
@@ -226,9 +228,32 @@ fun NoteEditorScreen(
         updatedAt = System.currentTimeMillis()
     )
 
+    fun hasMeaningfulContent(): Boolean {
+        val currentHtml = latestHtml.get().ifBlank { htmlContent }
+        val htmlText = currentHtml
+            .replace(Regex("(?is)<(script|style)[^>]*>.*?</\\1>"), " ")
+            .replace(Regex("(?is)<[^>]*>"), " ")
+            .replace("&nbsp;", " ")
+            .replace("&#160;", " ")
+            .trim()
+        val hasEmbeddedContent = Regex("(?is)<(img|video|audio|iframe|object|embed|svg|canvas)\\b")
+            .containsMatchIn(currentHtml)
+        return title.isNotBlank() ||
+            plainText.isNotBlank() ||
+            htmlText.isNotBlank() ||
+            hasEmbeddedContent ||
+            strokes.isNotEmpty() ||
+            currentStrokePoints.isNotEmpty()
+    }
+
     fun persistAndExit() {
+        if (discardIfEmpty && !hasBeenPersisted && !hasMeaningfulContent()) {
+            onBack()
+            return
+        }
         try {
             onSave(buildUpdatedNote())
+            hasBeenPersisted = true
             Toast.makeText(context, AppLanguage.text(context, "Note saved successfully ✅", "تم حفظ الملاحظة بنجاح ✅"), Toast.LENGTH_SHORT).show()
             onBack()
         } catch (_: Exception) {
@@ -338,10 +363,13 @@ fun NoteEditorScreen(
     // opening a file picker or leaving the app). This is especially important
     // because the vault locks and removes its editor when sent to the background.
     val saveDraftOnPause by rememberUpdatedState {
-        try {
-            onSave(buildUpdatedNote())
-        } catch (_: Exception) {
-            Toast.makeText(context, AppLanguage.text(context, "Could not auto-save this note. Reopen it and try saving again.", "تعذّر الحفظ التلقائي لهذه الملاحظة. افتحها مجددًا وحاول الحفظ."), Toast.LENGTH_LONG).show()
+        if (!discardIfEmpty || hasBeenPersisted || hasMeaningfulContent()) {
+            try {
+                onSave(buildUpdatedNote())
+                hasBeenPersisted = true
+            } catch (_: Exception) {
+                Toast.makeText(context, AppLanguage.text(context, "Could not auto-save this note. Reopen it and try saving again.", "تعذّر الحفظ التلقائي لهذه الملاحظة. افتحها مجددًا وحاول الحفظ."), Toast.LENGTH_LONG).show()
+            }
         }
     }
     val hostActivity = context as? ComponentActivity
@@ -389,39 +417,61 @@ fun NoteEditorScreen(
                     }
                 },
                 actions = {
-                    // أزرار تراجع وتقديم سريعة للكتابة جوة المحرر
+                    // التراجع والحفظ يظلان ظاهرين دائمًا بجوار عنوان الملاحظة.
                     IconButton(onClick = { webViewRef?.evaluateJavascript("document.execCommand('undo'); notifyEditorChanged();", null) }) {
                         Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = AppLanguage.text(context, "Undo", "تراجع"), tint = Color.White)
                     }
                     IconButton(onClick = { webViewRef?.evaluateJavascript("document.execCommand('redo'); notifyEditorChanged();", null) }) {
                         Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = AppLanguage.text(context, "Redo", "إعادة"), tint = Color.White)
                     }
-                    // تثبيت الملاحظة في الأعلى (Pin)
-                    IconButton(onClick = { isPinned = !isPinned }) {
-                        Icon(
-                            Icons.Default.PushPin,
-                            contentDescription = AppLanguage.text(context, "Pin", "تثبيت"),
-                            tint = if (isPinned) Color(0xFFFFD54F) else Color.Gray
-                        )
-                    }
-                    // Reminders are available only for ordinary notes outside the vault.
-                    if (allowReminders) {
-                        IconButton(onClick = { showReminderDialog = true }) {
-                            Icon(
-                                Icons.Default.NotificationsActive,
-                                contentDescription = AppLanguage.text(context, "Reminder", "تذكير"),
-                                tint = if (reminderTime != null && reminderTime!! > System.currentTimeMillis()) Color(0xFF69F0AE) else Color(0xFF80CBC4)
-                            )
-                        }
-                    }
-                    // حفظ وخروج
-                    IconButton(onClick = {
-                        if (allowReminders) launchPdfExport() else showPrivatePdfWarning = true
-                    }) {
-                        Icon(Icons.Default.PictureAsPdf, contentDescription = AppLanguage.text(context, "Export as PDF", "تصدير PDF"), tint = Color(0xFFFF8A65))
-                    }
                     IconButton(onClick = { saveAndExit() }) {
                         Icon(Icons.Default.Check, contentDescription = AppLanguage.text(context, "Save", "حفظ"), tint = Color(0xFF69F0AE))
+                    }
+
+                    // بقية إجراءات الملاحظة داخل قائمة مختصرة لتوفير مساحة العنوان.
+                    var showNoteOptions by remember(note.id) { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { showNoteOptions = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = AppLanguage.text(context, "More options", "المزيد"), tint = Color.White)
+                        }
+                        DropdownMenu(
+                            expanded = showNoteOptions,
+                            onDismissRequest = { showNoteOptions = false },
+                            modifier = Modifier.background(Color(0xFF2A2A2A))
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(AppLanguage.text(context, if (isPinned) "Unpin note" else "Pin note", if (isPinned) "إلغاء تثبيت الملاحظة" else "تثبيت الملاحظة")) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.PushPin, contentDescription = null, tint = if (isPinned) Color(0xFFFFD54F) else Color.White)
+                                },
+                                onClick = {
+                                    isPinned = !isPinned
+                                    showNoteOptions = false
+                                }
+                            )
+                            if (allowReminders) {
+                                DropdownMenuItem(
+                                    text = { Text(AppLanguage.text(context, "Reminder", "التنبيه")) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = if (reminderTime != null && reminderTime!! > System.currentTimeMillis()) Color(0xFF69F0AE) else Color(0xFF80CBC4))
+                                    },
+                                    onClick = {
+                                        showNoteOptions = false
+                                        showReminderDialog = true
+                                    }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(AppLanguage.text(context, "Export as PDF", "تصدير PDF")) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = Color(0xFFFF8A65))
+                                },
+                                onClick = {
+                                    showNoteOptions = false
+                                    if (allowReminders) launchPdfExport() else showPrivatePdfWarning = true
+                                }
+                            )
+                        }
                     }
                 }
             )
