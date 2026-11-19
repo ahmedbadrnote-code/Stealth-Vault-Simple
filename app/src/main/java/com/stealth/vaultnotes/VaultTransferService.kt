@@ -26,7 +26,7 @@ import java.io.OutputStream
 import java.util.UUID
 import javax.crypto.SecretKey
 
-private data class VaultTransferEntry(
+internal data class VaultTransferEntry(
     var sourceUri: String? = null,
     var blobPrefix: String? = null,
     var itemId: String? = null,
@@ -35,7 +35,7 @@ private data class VaultTransferEntry(
     var state: String = "PENDING"
 )
 
-private data class VaultTransferJournal(
+internal data class VaultTransferJournal(
     val id: String,
     val operation: String,
     val createdAt: Long,
@@ -260,7 +260,7 @@ class VaultTransferService : Service() {
         createNotificationChannel()
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle(getString(R.string.app_name))
+            .setContentTitle(if (AppLanguage.getLanguage(this) == AppLanguage.ARABIC) "نشاط في الخلفية" else "Background activity")
             .setContentText(if (AppLanguage.getLanguage(this) == AppLanguage.ARABIC) "جارٍ تنفيذ عملية في الخلفية" else "Background task in progress")
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
