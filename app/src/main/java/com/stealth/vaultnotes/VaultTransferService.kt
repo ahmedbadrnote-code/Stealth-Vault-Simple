@@ -23,6 +23,8 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FilterOutputStream
 import java.io.OutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 import javax.crypto.SecretKey
 
@@ -137,12 +139,30 @@ object VaultTransferManager {
             gson.toJson(journal).toByteArray(Charsets.UTF_8)
         )
         val temp = File(file.parentFile, file.name + ".tmp")
+        val backup = File(file.parentFile, file.name + ".bak")
         temp.writeBytes(encrypted)
         FileOutputStreamSync.sync(temp)
-        check(temp.renameTo(file) || run {
-            temp.copyTo(file, overwrite = true)
-            temp.delete()
-        }) { "Unable to persist transfer journal" }
+        try {
+            Files.move(
+                temp.toPath(),
+                file.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+            backup.delete()
+        } catch (_: Exception) {
+            if (file.exists()) {
+                if (backup.exists()) backup.delete()
+                check(file.renameTo(backup)) { "Unable to preserve previous transfer journal" }
+            }
+            try {
+                check(temp.renameTo(file)) { "Unable to finalize transfer journal" }
+                backup.delete()
+            } catch (e: Exception) {
+                if (backup.exists()) backup.renameTo(file)
+                throw e
+            }
+        }
     }
 
     internal fun readJournal(file: File, key: SecretKey): VaultTransferJournal {
@@ -161,6 +181,12 @@ object VaultTransferManager {
      */
     fun recoverPending(context: Context) {
         val key = SecurityCrypto.activeTransferKey(context)
+        context.filesDir.listFiles()?.filter {
+            it.name.startsWith(JOURNAL_PREFIX) && it.name.endsWith(".enc.bak")
+        }?.forEach { backup ->
+            val target = File(context.filesDir, backup.name.removeSuffix(".bak"))
+            if (!target.exists()) backup.renameTo(target) else backup.delete()
+        }
         val journalFiles = context.filesDir.listFiles()?.filter {
             it.name.startsWith(JOURNAL_PREFIX) && it.name.endsWith(".enc")
         }.orEmpty()
