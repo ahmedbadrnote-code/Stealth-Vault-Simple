@@ -234,14 +234,14 @@ fun SecretVaultScreen(
                         Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     )
                     true
-                } catch (_: SecurityException) {
+                } catch (_: Exception) {
                     try {
                         context.contentResolver.takePersistableUriPermission(
                             uri,
                             Intent.FLAG_GRANT_READ_URI_PERMISSION
                         )
                         true
-                    } catch (_: SecurityException) {
+                    } catch (_: Exception) {
                         false
                     }
                 }
@@ -288,7 +288,7 @@ fun SecretVaultScreen(
             val persisted = try {
                 context.contentResolver.takePersistableUriPermission(treeUri, grantFlags)
                 true
-            } catch (_: SecurityException) {
+            } catch (_: Exception) {
                 false
             }
             if (persisted) {
