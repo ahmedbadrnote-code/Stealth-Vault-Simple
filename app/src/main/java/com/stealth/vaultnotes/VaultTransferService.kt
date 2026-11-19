@@ -325,28 +325,30 @@ class VaultTransferService : Service() {
             ?: throw IllegalStateException("Vault index is unreadable")
         val type = VaultMediaType.valueOf(journal.mediaType ?: return false)
         var completed = 0
-        journal.entries.forEach { entry ->
-            val uri = entry.sourceUri?.let(Uri::parse) ?: return@forEach
-            val prefix = entry.blobPrefix ?: return@forEach
+        var allOriginalsDeleted = true
+        journal.entries.forEach entryLoop@ { entry ->
+            val uri = entry.sourceUri?.let(Uri::parse) ?: return@entryLoop
+            val prefix = entry.blobPrefix ?: return@entryLoop
             val item = SecurityCrypto.importAndMoveFileViaSAF(
                 this, uri, type, journal.subFolder ?: "General", prefix
-            ) ?: return@forEach
+            ) ?: return@entryLoop
             val updated = files.toMutableList().apply { add(item) }
             if (!StorageRepository.saveVaultFilesForTransfer(this, updated, key)) {
                 File(StorageRepository.getVaultBlobDir(this), item.encryptedFileName).delete()
-                return@forEach
+                return@entryLoop
             }
             files.clear()
             files.addAll(updated)
             entry.itemId = item.id
             entry.state = "INDEXED"
             VaultTransferManager.writeJournal(journalFile, journal, key)
-            SecurityCrypto.deleteOriginalDocument(this, uri)
-            entry.state = "ORIGINAL_DELETED"
+            val originalDeleted = SecurityCrypto.deleteOriginalDocument(this, uri)
+            if (!originalDeleted) allOriginalsDeleted = false
+            entry.state = if (originalDeleted) "ORIGINAL_DELETED" else "INDEXED_ORIGINAL_REMAINS"
             VaultTransferManager.writeJournal(journalFile, journal, key)
             completed++
         }
-        return completed == journal.entries.size
+        return completed == journal.entries.size && allOriginalsDeleted
     }
 
     private fun runExport(
