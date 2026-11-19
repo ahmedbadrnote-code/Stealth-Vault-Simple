@@ -1,6 +1,5 @@
 package com.stealth.vaultnotes
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -176,15 +175,17 @@ object VaultTransferManager {
             if (SecurityCrypto.transferKey(journal.id) != null) return@forEach
             when (journal.operation) {
                 "IMPORT" -> {
-                    journal.entries.forEach { entry ->
-                        val prefix = entry.blobPrefix ?: return@forEach
-                        val committed = index.any { it.encryptedFileName.startsWith(prefix) }
-                        if (committed) {
-                            entry.sourceUri?.let { uri ->
-                                SecurityCrypto.deleteOriginalDocument(context, Uri.parse(uri))
+                    journal.entries.forEach entryLoop@ { entry ->
+                        val prefix = entry.blobPrefix
+                        if (prefix != null) {
+                            val committed = index.any { it.encryptedFileName.startsWith(prefix) }
+                            if (committed) {
+                                entry.sourceUri?.let { uri ->
+                                    SecurityCrypto.deleteOriginalDocument(context, Uri.parse(uri))
+                                }
+                            } else {
+                                blobDir.listFiles()?.filter { it.name.startsWith(prefix) }?.forEach { it.delete() }
                             }
-                        } else {
-                            blobDir.listFiles()?.filter { it.name.startsWith(prefix) }?.forEach { it.delete() }
                         }
                     }
                 }
@@ -195,7 +196,7 @@ object VaultTransferManager {
                     journal.entries.forEach { entry ->
                         val item = journal.selectedItems.firstOrNull { it.id == entry.itemId }
                         when (entry.state) {
-                            "COPYING", "PENDING" -> {
+                            "COPYING", "PENDING", "FAILED" -> {
                                 entry.targetUri?.let { deleteDocument(context, Uri.parse(it)) }
                                 entry.temporaryName?.let { name ->
                                     destination?.listFiles()?.filter { it.name == name }?.forEach { it.delete() }
@@ -247,7 +248,6 @@ class VaultTransferService : Service() {
     private const val NOTIFICATION_ID = 7314
     }
 
-    private val gson = Gson()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onBind(intent: Intent?): IBinder? = null
