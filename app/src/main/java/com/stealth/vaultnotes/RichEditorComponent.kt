@@ -123,6 +123,7 @@ fun NoteEditorScreen(
         mutableStateListOf(*initial.toTypedArray())
     }
     var currentStrokePoints by remember { mutableStateOf<List<Pair<Float, Float>>>(emptyList()) }
+    var hasBeenPersisted by remember(note.id) { mutableStateOf(!discardIfEmpty) }
 
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     val latestHtml = remember(note.id) { AtomicReference(note.htmlContent) }
@@ -362,7 +363,7 @@ fun NoteEditorScreen(
     // opening a file picker or leaving the app). This is especially important
     // because the vault locks and removes its editor when sent to the background.
     val saveDraftOnPause by rememberUpdatedState {
-        if (!discardIfEmpty || hasMeaningfulContent()) {
+        if (!discardIfEmpty || hasBeenPersisted || hasMeaningfulContent()) {
             try {
                 onSave(buildUpdatedNote())
                 hasBeenPersisted = true
