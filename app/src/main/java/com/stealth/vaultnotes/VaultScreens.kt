@@ -193,6 +193,13 @@ fun SecretVaultScreen(
         )
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching { VaultTransferManager.recoverPending(context) }
+        }
+        vaultFiles = StorageRepository.loadVaultFiles(context)
+    }
+
     LaunchedEffect(currentTab) {
         currentSubFolder = savedSubFolders.firstOrNull() ?: "General"
         selectedIds.clear()
