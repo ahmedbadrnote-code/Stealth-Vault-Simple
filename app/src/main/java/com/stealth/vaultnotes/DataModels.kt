@@ -410,6 +410,17 @@ object StorageRepository {
         }
     }
 
+    @Synchronized
+    internal fun updateVaultFilesForTransfer(
+        context: Context,
+        key: javax.crypto.SecretKey,
+        update: (MutableList<VaultFileItem>) -> List<VaultFileItem>
+    ): Boolean {
+        val current = loadVaultFilesForTransfer(context, key) ?: return false
+        val updated = update(current)
+        return saveVaultFilesForTransfer(context, updated, key)
+    }
+
     private fun vaultFoldersFile(context: Context, mediaType: VaultMediaType): File =
         File(context.filesDir, "vault_folders_${mediaType.name.lowercase(Locale.ROOT)}.enc")
 
