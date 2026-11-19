@@ -178,6 +178,7 @@ fun SecretVaultScreen(
                     withContext(Dispatchers.IO) {
                         runCatching { VaultTransferManager.recoverPending(context) }
                     }
+                    if (!SecurityCrypto.isVaultSessionUnlocked()) return@launch
                     vaultFiles = StorageRepository.loadVaultFiles(context)
                     isBusy = false
                     busyMessage = ""
