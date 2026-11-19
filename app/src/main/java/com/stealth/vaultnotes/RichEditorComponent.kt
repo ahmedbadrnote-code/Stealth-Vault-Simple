@@ -82,6 +82,7 @@ data class SerializableStroke(val points: List<Pair<Float, Float>>, val colorHex
 @Composable
 fun NoteEditorScreen(
     activity: ComponentActivity,
+    printContext: Context,
     note: NoteItem,
     onSave: (NoteItem) -> Unit,
     onBack: () -> Unit,
@@ -286,7 +287,7 @@ fun NoteEditorScreen(
                 if (activity.isFinishing || activity.isDestroyed) {
                     throw IllegalStateException("The activity is no longer active.")
                 }
-                val printManager = activity.getSystemService(Context.PRINT_SERVICE) as? PrintManager
+                val printManager = printContext.getSystemService(Context.PRINT_SERVICE) as? PrintManager
                     ?: throw IllegalStateException("Print service is unavailable.")
                 val printAttributes = PrintAttributes.Builder()
                     .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
