@@ -87,7 +87,8 @@ fun NoteEditorScreen(
     onSave: (NoteItem) -> Unit,
     onBack: () -> Unit,
     onScheduleReminder: (NoteItem, Long) -> Unit,
-    allowReminders: Boolean = true
+    allowReminders: Boolean = true,
+    discardIfEmpty: Boolean = false
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -226,7 +227,29 @@ fun NoteEditorScreen(
         updatedAt = System.currentTimeMillis()
     )
 
+    fun hasMeaningfulContent(): Boolean {
+        val currentHtml = latestHtml.get().ifBlank { htmlContent }
+        val htmlText = currentHtml
+            .replace(Regex("(?is)<(script|style)[^>]*>.*?</\\1>"), " ")
+            .replace(Regex("(?is)<[^>]*>"), " ")
+            .replace("&nbsp;", " ")
+            .replace("&#160;", " ")
+            .trim()
+        val hasEmbeddedContent = Regex("(?is)<(img|video|audio|iframe|object|embed|svg|canvas)\\b")
+            .containsMatchIn(currentHtml)
+        return title.isNotBlank() ||
+            plainText.isNotBlank() ||
+            htmlText.isNotBlank() ||
+            hasEmbeddedContent ||
+            strokes.isNotEmpty() ||
+            currentStrokePoints.isNotEmpty()
+    }
+
     fun persistAndExit() {
+        if (discardIfEmpty && !hasMeaningfulContent()) {
+            onBack()
+            return
+        }
         try {
             onSave(buildUpdatedNote())
             Toast.makeText(context, AppLanguage.text(context, "Note saved successfully ✅", "تم حفظ الملاحظة بنجاح ✅"), Toast.LENGTH_SHORT).show()
@@ -338,10 +361,12 @@ fun NoteEditorScreen(
     // opening a file picker or leaving the app). This is especially important
     // because the vault locks and removes its editor when sent to the background.
     val saveDraftOnPause by rememberUpdatedState {
-        try {
-            onSave(buildUpdatedNote())
-        } catch (_: Exception) {
-            Toast.makeText(context, AppLanguage.text(context, "Could not auto-save this note. Reopen it and try saving again.", "تعذّر الحفظ التلقائي لهذه الملاحظة. افتحها مجددًا وحاول الحفظ."), Toast.LENGTH_LONG).show()
+        if (!discardIfEmpty || hasMeaningfulContent()) {
+            try {
+                onSave(buildUpdatedNote())
+            } catch (_: Exception) {
+                Toast.makeText(context, AppLanguage.text(context, "Could not auto-save this note. Reopen it and try saving again.", "تعذّر الحفظ التلقائي لهذه الملاحظة. افتحها مجددًا وحاول الحفظ."), Toast.LENGTH_LONG).show()
+            }
         }
     }
     val hostActivity = context as? ComponentActivity
