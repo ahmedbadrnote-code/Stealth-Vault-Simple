@@ -173,6 +173,7 @@ object VaultTransferManager {
                 // An unreadable journal must not trigger destructive cleanup.
                 return@forEach
             }
+            if (SecurityCrypto.transferKey(journal.id) != null) return@forEach
             when (journal.operation) {
                 "IMPORT" -> {
                     journal.entries.forEach { entry ->
