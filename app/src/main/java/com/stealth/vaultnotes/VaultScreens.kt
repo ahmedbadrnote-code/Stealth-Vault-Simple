@@ -170,19 +170,24 @@ fun SecretVaultScreen(
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(receiverContext: Context?, intent: Intent?) {
-                vaultFiles = StorageRepository.loadVaultFiles(context)
-                isBusy = false
-                busyMessage = ""
-                selectedIds.clear()
                 val succeeded = intent?.getBooleanExtra("success", false) == true
-                val message = if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) {
-                    if (succeeded) "اكتملت عملية نقل الملفات في الخلفية."
-                    else "انتهت عملية النقل مع وجود ملفات لم تكتمل؛ النسخ الأصلية المحفوظة داخل الخزنة لم تُحذف."
-                } else {
-                    if (succeeded) "The background file transfer is complete."
-                    else "The transfer ended with incomplete items; remaining vault originals were kept."
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        runCatching { VaultTransferManager.recoverPending(context) }
+                    }
+                    vaultFiles = StorageRepository.loadVaultFiles(context)
+                    isBusy = false
+                    busyMessage = ""
+                    selectedIds.clear()
+                    val message = if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) {
+                        if (succeeded) "اكتملت عملية نقل الملفات في الخلفية."
+                        else "انتهت عملية النقل مع وجود ملفات لم تكتمل؛ النسخ الأصلية المحفوظة داخل الخزنة لم تُحذف."
+                    } else {
+                        if (succeeded) "The background file transfer is complete."
+                        else "The transfer ended with incomplete items; remaining vault originals were kept."
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                 }
-                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             }
         }
         ContextCompat.registerReceiver(
