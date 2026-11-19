@@ -268,6 +268,7 @@ class VaultTransferService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var transferWakeLock: PowerManager.WakeLock? = null
+    @Volatile private var activeTransferId: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -321,6 +322,7 @@ class VaultTransferService : Service() {
             stopSelf(startId)
             return START_NOT_STICKY
         }
+        activeTransferId = transferId
 
         serviceScope.launch {
             var success = false
@@ -338,11 +340,14 @@ class VaultTransferService : Service() {
             } catch (_: Exception) {
                 success = false
             } finally {
-                SecurityCrypto.finishTransferKey(transferId)
-                releaseTransferWakeLock()
-                sendTransferFinished(success, operation)
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf(startId)
+                if (activeTransferId == transferId) {
+                    activeTransferId = null
+                    SecurityCrypto.finishTransferKey(transferId)
+                    releaseTransferWakeLock()
+                    sendTransferFinished(success, operation)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf(startId)
+                }
             }
         }
         return START_NOT_STICKY
@@ -486,6 +491,11 @@ class VaultTransferService : Service() {
     }
 
     override fun onDestroy() {
+        activeTransferId?.let { transferId ->
+            activeTransferId = null
+            SecurityCrypto.finishTransferKey(transferId)
+            sendTransferFinished(false, "TRANSFER")
+        }
         releaseTransferWakeLock()
         serviceScope.cancel()
         super.onDestroy()
