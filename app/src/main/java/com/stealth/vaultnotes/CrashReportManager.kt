@@ -239,7 +239,7 @@ object CrashReportManager {
         val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
         val relativePath = "\${Environment.DIRECTORY_DOWNLOADS}/Stealth Vault Crash Reports/"
         val exported = preferences(context)
-            .getStringSet(KEY_EXPORTED_NAMES, emptySet())
+            .getStringSet(KEY_EXPORTED_NAMES, mutableSetOf<String>())
             ?.toMutableSet()
             ?: mutableSetOf()
 
