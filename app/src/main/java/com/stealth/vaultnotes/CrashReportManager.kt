@@ -28,6 +28,7 @@ object CrashReportManager {
     private const val KEY_VIEWER_ACTIVE = "viewer_active"
     private const val KEY_VIEWER_STATE = "viewer_state"
     private const val KEY_EXPORTED_NAMES = "exported_report_names"
+    private const val KEY_PENDING_NOTICE = "pending_report_notice"
     private const val MAX_BREADCRUMBS = 45
 
     private val installed = AtomicBoolean(false)
@@ -164,6 +165,13 @@ object CrashReportManager {
         }
     }
 
+    fun consumePendingReportNotice(context: Context): Boolean {
+        val prefs = preferences(context)
+        val pending = prefs.getBoolean(KEY_PENDING_NOTICE, false)
+        if (pending) prefs.edit().putBoolean(KEY_PENDING_NOTICE, false).apply()
+        return pending
+    }
+
     fun getLatestReportText(context: Context): String {
         val latest = latestReportFile(context) ?: return ""
         return try {
@@ -226,6 +234,7 @@ object CrashReportManager {
             output.flush()
             output.fd.sync()
         }
+        preferences(context).edit().putBoolean(KEY_PENDING_NOTICE, true).apply()
 
         directory.listFiles()
             ?.filter { it.isFile && it.name.endsWith(".txt") }

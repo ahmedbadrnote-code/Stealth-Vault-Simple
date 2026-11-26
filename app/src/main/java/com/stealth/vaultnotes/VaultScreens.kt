@@ -15,6 +15,7 @@ import android.graphics.pdf.PdfRenderer
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.os.ParcelFileDescriptor
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -1586,7 +1587,12 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
             val item = items[page]
             val isCurrentPage = pagerState.currentPage == page
             val decryptedFile by produceState<File?>(initialValue = null, key1 = item.id) {
+                val decryptStartedAt = SystemClock.elapsedRealtime()
                 value = decryptViewerPreview(context, item)
+                CrashReportManager.recordEvent(
+                    context,
+                    "Preview decryption finished page=${page} mediaType=${item.mediaType.name} item=${item.id.take(8)} durationMs=${SystemClock.elapsedRealtime() - decryptStartedAt} success=${value != null}"
+                )
             }
 
             DisposableEffect(item.id, decryptedFile) {
@@ -1618,6 +1624,9 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                         }
                     }
                 } else if (item.mediaType == VaultMediaType.VIDEO) {
+                    val playerCreatedAt = remember(decryptedFile!!.absolutePath) {
+                        SystemClock.elapsedRealtime()
+                    }
                     val exoPlayer = remember(decryptedFile!!.absolutePath) {
                         ExoPlayer.Builder(context)
                             .setSeekBackIncrementMs(10_000L)
@@ -1627,9 +1636,14 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                                 setMediaItem(MediaItem.fromUri(Uri.fromFile(decryptedFile!!)))
                                 CrashReportManager.recordEvent(
                                     context,
-                                    "Video player created page=${page} item=${item.id.take(8)}"
+                                    "Video prepare requested page=${page} item=${item.id.take(8)}"
                                 )
+                                val prepareCallStartedAt = SystemClock.elapsedRealtime()
                                 prepare()
+                                CrashReportManager.recordEvent(
+                                    context,
+                                    "Video prepare() returned page=${page} item=${item.id.take(8)} callDurationMs=${SystemClock.elapsedRealtime() - prepareCallStartedAt}"
+                                )
                             }
                     }
                     LaunchedEffect(isCurrentPage, exoPlayer) {
@@ -1647,7 +1661,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                                 }
                                 CrashReportManager.recordEvent(
                                     context,
-                                    "Video state=${stateName} page=${page} item=${item.id.take(8)} positionMs=${exoPlayer.currentPosition} playWhenReady=${exoPlayer.playWhenReady}"
+                                    "Video state=${stateName} page=${page} item=${item.id.take(8)} positionMs=${exoPlayer.currentPosition} playWhenReady=${exoPlayer.playWhenReady} readyAfterMs=${if (playbackState == Player.STATE_READY) SystemClock.elapsedRealtime() - playerCreatedAt else -1}"
                                 )
                             }
 

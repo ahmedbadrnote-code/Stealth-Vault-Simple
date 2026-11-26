@@ -69,6 +69,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashReportManager.recordEvent(this, "MainActivity created")
+        if (CrashReportManager.consumePendingReportNotice(this)) {
+            Toast.makeText(
+                this,
+                AppLanguage.text(
+                    this,
+                    "A crash report was saved. Open Crash reports to view or export it.",
+                    "تم حفظ تقرير عطل. افتح تقارير الأعطال لعرضه أو تصديره."
+                ),
+                Toast.LENGTH_LONG
+            ).show()
+        }
         appLanguageState.value = AppLanguage.getLanguage(this)
         // السماح بلقطات الشاشة في Debug أثناء الاختبار فقط.
         // تظل الحماية مفعّلة تلقائيًا في Release لمنع لقطات الشاشة ومعاينة التطبيقات الحديثة.
