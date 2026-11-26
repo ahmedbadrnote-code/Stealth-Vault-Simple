@@ -80,11 +80,11 @@ object CrashReportManager {
                 .toList()
 
             val safeEvent = redact(context, event).take(1200)
-            val line = "\${timestamp()} | \$safeEvent"
+            val line = "${timestamp()} | $safeEvent"
             val errorText = if (error == null) "" else {
                 val writer = StringWriter()
                 error.printStackTrace(PrintWriter(writer))
-                "\n\${redact(context, writer.toString()).take(5000)}"
+                "\n${redact(context, writer.toString()).take(5000)}"
             }
             val updated = (existing + (line + errorText)).takeLast(MAX_BREADCRUMBS)
             prefs.edit().putString(KEY_BREADCRUMBS, updated.joinToString("\n")).apply()
@@ -100,12 +100,12 @@ object CrashReportManager {
         mediaType: String,
         itemId: String
     ) {
-        val state = "active=true page=\$page mediaType=\$mediaType item=\${itemId.take(8)}"
+        val state = "active=true page=$page mediaType=$mediaType item=${itemId.take(8)}"
         preferences(context).edit()
             .putBoolean(KEY_VIEWER_ACTIVE, true)
             .putString(KEY_VIEWER_STATE, state)
             .apply()
-        recordEvent(context, "Media viewer page selected: \$state")
+        recordEvent(context, "Media viewer page selected: $state")
     }
 
     @Synchronized
@@ -136,11 +136,11 @@ object CrashReportManager {
         val report = buildString {
             appendLine("STEALTH VAULT - POSSIBLE UNEXPECTED PROCESS EXIT")
             appendLine("This is not a confirmed Java crash. Android may have terminated the process, or a native component may have failed.")
-            appendLine("Time detected: \${timestamp()}")
-            appendLine("Device: \${Build.MANUFACTURER} \${Build.MODEL}")
-            appendLine("Android API: \${Build.VERSION.SDK_INT}")
-            appendLine("App version: \${BuildConfig.VERSION_NAME} (\${BuildConfig.VERSION_CODE})")
-            appendLine("Last viewer state: \$viewerState")
+            appendLine("Time detected: ${timestamp()}")
+            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("Android API: ${Build.VERSION.SDK_INT}")
+            appendLine("App version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            appendLine("Last viewer state: $viewerState")
             appendLine()
             appendLine("Recent diagnostic events:")
             appendLine(breadcrumbs.ifBlank { "No diagnostic events were recorded." })
@@ -197,12 +197,12 @@ object CrashReportManager {
 
         val report = buildString {
             appendLine("STEALTH VAULT - UNCAUGHT EXCEPTION")
-            appendLine("Time: \${timestamp()}")
-            appendLine("Thread: \${thread.name} (id=\${thread.id})")
-            appendLine("Device: \${Build.MANUFACTURER} \${Build.MODEL}")
-            appendLine("Android API: \${Build.VERSION.SDK_INT}")
-            appendLine("App version: \${BuildConfig.VERSION_NAME} (\${BuildConfig.VERSION_CODE})")
-            appendLine("Last viewer state: \$viewerState")
+            appendLine("Time: ${timestamp()}")
+            appendLine("Thread: ${thread.name} (id=${thread.id})")
+            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("Android API: ${Build.VERSION.SDK_INT}")
+            appendLine("App version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            appendLine("Last viewer state: $viewerState")
             appendLine()
             appendLine("Exception:")
             appendLine(redact(context, stackWriter.toString()))
@@ -220,7 +220,7 @@ object CrashReportManager {
         val directory = reportDirectory(context)
         if (!directory.exists() && !directory.mkdirs()) return
 
-        val file = File(directory, "\$prefix-\${fileTimestamp()}.txt")
+        val file = File(directory, "$prefix-${fileTimestamp()}.txt")
         FileOutputStream(file).use { output ->
             output.write(redact(context, content).toByteArray(Charsets.UTF_8))
             output.flush()
@@ -237,7 +237,7 @@ object CrashReportManager {
     private fun publishWithMediaStore(context: Context, reports: List<File>) {
         val resolver = context.contentResolver
         val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-        val relativePath = "\${Environment.DIRECTORY_DOWNLOADS}/Stealth Vault Crash Reports/"
+        val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/Stealth Vault Crash Reports/"
         val exported = preferences(context)
             .getStringSet(KEY_EXPORTED_NAMES, mutableSetOf<String>())
             ?.toMutableSet()
@@ -250,7 +250,7 @@ object CrashReportManager {
                 val existing = resolver.query(
                     collection,
                     arrayOf(MediaStore.MediaColumns._ID),
-                    "\${MediaStore.MediaColumns.DISPLAY_NAME}=? AND \${MediaStore.MediaColumns.RELATIVE_PATH}=?",
+                    "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND ${MediaStore.MediaColumns.RELATIVE_PATH}=?",
                     arrayOf(report.name, relativePath),
                     null
                 )?.use { it.moveToFirst() } ?: false
