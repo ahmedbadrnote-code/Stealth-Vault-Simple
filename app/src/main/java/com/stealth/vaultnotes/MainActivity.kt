@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashReportManager.recordEvent(this, "MainActivity created")
         appLanguageState.value = AppLanguage.getLanguage(this)
         // السماح بلقطات الشاشة في Debug أثناء الاختبار فقط.
         // تظل الحماية مفعّلة تلقائيًا في Release لمنع لقطات الشاشة ومعاينة التطبيقات الحديثة.
@@ -163,6 +164,9 @@ class MainActivity : ComponentActivity() {
         // Change launcher aliases only after this Activity has left the foreground.
         // Disabling the alias that launched the currently visible Activity can make
         // Android remove that Activity, which looks like an unexpected app exit.
+        if (!isChangingConfigurations) {
+            CrashReportManager.markAppBackgrounded(this)
+        }
         AppLanguage.updateLauncherAlias(this, AppLanguage.getLanguage(this))
         super.onStop()
     }
@@ -203,6 +207,8 @@ fun StealthNotesApp(
     var newNoteId by remember { mutableStateOf<String?>(null) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var selectedLanguage by remember { mutableStateOf(AppLanguage.getLanguage(context)) }
+    var showCrashReportsDialog by remember { mutableStateOf(false) }
+    var crashReportText by remember { mutableStateOf("") }
 
     LaunchedEffect(openNoteId, publicNotes, activeNoteForEdit, isVaultOpen, isFirstRun) {
         val requestedId = openNoteId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
@@ -303,6 +309,34 @@ fun StealthNotesApp(
                 } else {
                     Toast.makeText(context, AppLanguage.text(context, "Invalid backup file.", "ملف النسخة الاحتياطية غير صالح."), Toast.LENGTH_SHORT).show()
                 }
+            }
+        }
+    }
+
+    val crashReportExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri: Uri? ->
+        uri?.let { destination ->
+            scope.launch {
+                val report = withContext(Dispatchers.IO) {
+                    CrashReportManager.getLatestReportText(context)
+                }
+                val saved = withContext(Dispatchers.IO) {
+                    try {
+                        val output = context.contentResolver.openOutputStream(destination)
+                            ?: return@withContext false
+                        output.use { it.write(report.toByteArray(Charsets.UTF_8)) }
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+                Toast.makeText(
+                    context,
+                    if (saved) AppLanguage.text(context, "Crash report exported.", "تم تصدير تقرير العطل.")
+                    else AppLanguage.text(context, "Could not export crash report.", "تعذّر تصدير تقرير العطل."),
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
@@ -468,6 +502,16 @@ fun StealthNotesApp(
                     )
                 },
                 actions = {
+                    IconButton(onClick = {
+                        crashReportText = CrashReportManager.getLatestReportText(context)
+                        showCrashReportsDialog = true
+                    }) {
+                        Icon(
+                            Icons.Default.BugReport,
+                            contentDescription = AppLanguage.text(context, "Crash reports", "تقارير الأعطال"),
+                            tint = Color.White
+                        )
+                    }
                     IconButton(onClick = {
                         selectedLanguage = AppLanguage.getLanguage(context)
                         showLanguageDialog = true
@@ -783,6 +827,65 @@ fun StealthNotesApp(
             dismissButton = {
                 TextButton(onClick = { showLanguageDialog = false }) {
                     Text(if (AppLanguage.getLanguage(context) == AppLanguage.ARABIC) "إلغاء" else AppLanguage.text(context, "Cancel", "إلغاء"), color = Color.Gray)
+                }
+            }
+        )
+    }
+
+    if (showCrashReportsDialog) {
+        AlertDialog(
+            onDismissRequest = { showCrashReportsDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            title = {
+                Text(
+                    AppLanguage.text(context, "Crash reports", "تقارير الأعطال"),
+                    color = Color.White
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        AppLanguage.text(
+                            context,
+                            "Reports are stored locally. On Android 10 and newer, copies are saved automatically in Downloads/Stealth Vault Crash Reports.",
+                            "التقارير تُحفظ على الهاتف فقط. في أندرويد 10 أو أحدث تُحفظ نسخة تلقائيًا في التنزيلات / Stealth Vault Crash Reports."
+                        ),
+                        color = Color.LightGray,
+                        fontSize = 12.sp
+                    )
+                    if (crashReportText.isBlank()) {
+                        Text(
+                            AppLanguage.text(context, "No crash reports are available yet.", "لا توجد تقارير أعطال حتى الآن."),
+                            color = Color.White
+                        )
+                    } else {
+                        Text(
+                            crashReportText,
+                            color = Color.LightGray,
+                            fontSize = 11.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 300.dp)
+                                .verticalScroll(rememberScrollState())
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = crashReportText.isNotBlank(),
+                    onClick = {
+                        crashReportExportLauncher.launch(
+                            CrashReportManager.getLatestReportFileName(context)
+                        )
+                    }
+                ) {
+                    Text(AppLanguage.text(context, "Export TXT", "تصدير TXT"))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCrashReportsDialog = false }) {
+                    Text(AppLanguage.text(context, "Close", "إغلاق"), color = Color.Gray)
                 }
             }
         )

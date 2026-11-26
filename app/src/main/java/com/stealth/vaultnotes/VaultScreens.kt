@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.CancellationException
@@ -1560,6 +1562,19 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
     DisposableEffect(Unit) {
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            CrashReportManager.clearViewerState(context)
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage, items.size) {
+        val currentItem = items.getOrNull(pagerState.currentPage)
+        if (currentItem != null) {
+            CrashReportManager.setViewerState(
+                context = context,
+                page = pagerState.currentPage,
+                mediaType = currentItem.mediaType.name,
+                itemId = currentItem.id
+            )
         }
     }
 
@@ -1610,14 +1625,52 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                             .build()
                             .apply {
                                 setMediaItem(MediaItem.fromUri(Uri.fromFile(decryptedFile!!)))
+                                CrashReportManager.recordEvent(
+                                    context,
+                                    "Video player created page=${page} item=${item.id.take(8)}"
+                                )
                                 prepare()
                             }
                     }
                     LaunchedEffect(isCurrentPage, exoPlayer) {
                         if (isCurrentPage) exoPlayer.play() else exoPlayer.pause()
                     }
-                    DisposableEffect(exoPlayer) {
-                        onDispose { exoPlayer.release() }
+                    DisposableEffect(exoPlayer, item.id, page) {
+                        val listener = object : Player.Listener {
+                            override fun onPlaybackStateChanged(playbackState: Int) {
+                                val stateName = when (playbackState) {
+                                    Player.STATE_IDLE -> "IDLE"
+                                    Player.STATE_BUFFERING -> "BUFFERING"
+                                    Player.STATE_READY -> "READY"
+                                    Player.STATE_ENDED -> "ENDED"
+                                    else -> "UNKNOWN"
+                                }
+                                CrashReportManager.recordEvent(
+                                    context,
+                                    "Video state=${stateName} page=${page} item=${item.id.take(8)} positionMs=${exoPlayer.currentPosition} playWhenReady=${exoPlayer.playWhenReady}"
+                                )
+                            }
+
+                            override fun onPlayerError(error: PlaybackException) {
+                                CrashReportManager.recordEvent(
+                                    context,
+                                    "Video player error page=${page} item=${item.id.take(8)} code=${error.errorCodeName} message=${error.message}",
+                                    error
+                                )
+                            }
+
+                            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                                CrashReportManager.recordEvent(
+                                    context,
+                                    "Video isPlaying=${isPlaying} page=${page} item=${item.id.take(8)} positionMs=${exoPlayer.currentPosition}"
+                                )
+                            }
+                        }
+                        exoPlayer.addListener(listener)
+                        onDispose {
+                            exoPlayer.removeListener(listener)
+                            exoPlayer.release()
+                        }
                     }
                     Box(Modifier.fillMaxSize()) {
                         AndroidView(
