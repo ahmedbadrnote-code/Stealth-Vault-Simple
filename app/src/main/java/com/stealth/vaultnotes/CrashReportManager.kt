@@ -110,11 +110,11 @@ object CrashReportManager {
     }
 
     @Synchronized
-    fun clearViewerState(context: Context) {
-        preferences(context).edit()
+    fun clearViewerState(context: Context, persistSynchronously: Boolean = false) {
+        val editor = preferences(context).edit()
             .putBoolean(KEY_VIEWER_ACTIVE, false)
             .putString(KEY_VIEWER_STATE, "")
-            .apply()
+        if (persistSynchronously) editor.commit() else editor.apply()
     }
 
     fun markAppBackgrounded(context: Context) {
@@ -141,13 +141,14 @@ object CrashReportManager {
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Android API: ${Build.VERSION.SDK_INT}")
             appendLine("App version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            appendLine(heapSummary())
             appendLine("Last viewer state: $viewerState")
             appendLine()
             appendLine("Recent diagnostic events:")
             appendLine(breadcrumbs.ifBlank { "No diagnostic events were recorded." })
         }
         writeReportFile(context, "possible-exit", report)
-        clearViewerState(context)
+        clearViewerState(context, persistSynchronously = true)
     }
 
     fun publishReportsToDownloads(context: Context) {
@@ -210,6 +211,7 @@ object CrashReportManager {
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Android API: ${Build.VERSION.SDK_INT}")
             appendLine("App version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            appendLine(heapSummary())
             appendLine("Last viewer state: $viewerState")
             appendLine()
             appendLine("Exception:")
@@ -220,7 +222,7 @@ object CrashReportManager {
         }
 
         writeReportFile(context, "crash", report)
-        clearViewerState(context)
+        clearViewerState(context, persistSynchronously = true)
     }
 
     @Synchronized
@@ -234,7 +236,7 @@ object CrashReportManager {
             output.flush()
             output.fd.sync()
         }
-        preferences(context).edit().putBoolean(KEY_PENDING_NOTICE, true).apply()
+        preferences(context).edit().putBoolean(KEY_PENDING_NOTICE, true).commit()
 
         directory.listFiles()
             ?.filter { it.isFile && it.name.endsWith(".txt") }
@@ -328,6 +330,12 @@ object CrashReportManager {
 
     private fun preferences(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun heapSummary(): String {
+        val runtime = Runtime.getRuntime()
+        val used = runtime.totalMemory() - runtime.freeMemory()
+        return "Java heap: used=${used / 1_048_576}MB total=${runtime.totalMemory() / 1_048_576}MB max=${runtime.maxMemory() / 1_048_576}MB"
+    }
 
     private fun timestamp(): String =
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
