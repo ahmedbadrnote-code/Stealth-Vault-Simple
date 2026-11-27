@@ -1564,6 +1564,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
             .build()
     }
     val latestPreview = rememberUpdatedState(activePreview)
+    val currentItemState = rememberUpdatedState(currentItem)
 
     fun exitViewer() {
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -1619,7 +1620,6 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
         }
     }
 
-    val currentItemState = rememberUpdatedState(currentItem)
 
     LaunchedEffect(currentItem?.id) {
         // Detach and stop the previous media source before its decrypted file is removed.
