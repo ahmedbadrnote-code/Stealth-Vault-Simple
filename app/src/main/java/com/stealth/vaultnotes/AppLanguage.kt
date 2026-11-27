@@ -10,7 +10,8 @@ import java.util.Locale
 
 /**
  * Stores the user's in-app language and applies its locale before Activity creation.
- * Arabic is the default for new installations; an explicit user choice is preserved.
+ * On first launch, the device language is used (Arabic when the device language is Arabic,
+ * English otherwise). The initial choice is persisted, and an explicit user choice is preserved.
  */
 object AppLanguage {
     const val ARABIC = "ar"
@@ -19,10 +20,30 @@ object AppLanguage {
     private const val PREFERENCES_NAME = "app_language_preferences"
     private const val LANGUAGE_KEY = "selected_language"
 
+    @Synchronized
     fun getLanguage(context: Context): String {
-        val saved = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-            .getString(LANGUAGE_KEY, ARABIC)
-        return if (saved == ENGLISH) ENGLISH else ARABIC
+        val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+        val saved = preferences.getString(LANGUAGE_KEY, null)
+
+        if (saved == ARABIC || saved == ENGLISH) {
+            return saved
+        }
+
+        // minSdk is 26, so Configuration.locales is available on every supported device.
+        val deviceLocale = context.resources.configuration.locales[0] ?: Locale.getDefault()
+        val detectedLanguage = if (deviceLocale.language.equals(ARABIC, ignoreCase = true)) {
+            ARABIC
+        } else {
+            ENGLISH
+        }
+
+        // Persist the first-run detection so later device-language changes do not
+        // override the user's established in-app language.
+        preferences.edit()
+            .putString(LANGUAGE_KEY, detectedLanguage)
+            .apply()
+
+        return detectedLanguage
     }
 
     fun text(context: Context, english: String, arabic: String): String =
