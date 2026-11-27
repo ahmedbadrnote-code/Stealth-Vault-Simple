@@ -1586,7 +1586,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                 val item = currentItemState.value
                 CrashReportManager.recordEvent(
                     context,
-                    "Video state=\${stateName} page=\${pagerState.currentPage} item=\${item?.id?.take(8) ?: "none"} positionMs=\${exoPlayer.currentPosition} playWhenReady=\${exoPlayer.playWhenReady} readyAfterMs=\${if (playbackState == Player.STATE_READY && playerLoadStartedAt > 0L) SystemClock.elapsedRealtime() - playerLoadStartedAt else -1}"
+                    "Video state=${stateName} page=${pagerState.currentPage} item=${item?.id?.take(8) ?: "none"} positionMs=${exoPlayer.currentPosition} playWhenReady=${exoPlayer.playWhenReady} readyAfterMs=${if (playbackState == Player.STATE_READY && playerLoadStartedAt > 0L) SystemClock.elapsedRealtime() - playerLoadStartedAt else -1}"
                 )
             }
 
@@ -1594,7 +1594,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                 val item = currentItemState.value
                 CrashReportManager.recordEvent(
                     context,
-                    "Video player error page=\${pagerState.currentPage} item=\${item?.id?.take(8) ?: "none"} code=\${error.errorCodeName} message=\${error.message}",
+                    "Video player error page=${pagerState.currentPage} item=${item?.id?.take(8) ?: "none"} code=${error.errorCodeName} message=${error.message}",
                     error
                 )
             }
@@ -1603,7 +1603,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                 val item = currentItemState.value
                 CrashReportManager.recordEvent(
                     context,
-                    "Video isPlaying=\${isPlaying} page=\${pagerState.currentPage} item=\${item?.id?.take(8) ?: "none"} positionMs=\${exoPlayer.currentPosition}"
+                    "Video isPlaying=${isPlaying} page=${pagerState.currentPage} item=${item?.id?.take(8) ?: "none"} positionMs=${exoPlayer.currentPosition}"
                 )
             }
         }
@@ -1637,7 +1637,7 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
             val preview = decryptViewerPreview(context, currentItem)
             CrashReportManager.recordEvent(
                 context,
-                "Preview decryption finished page=\${pagerState.currentPage} mediaType=\${currentItem.mediaType.name} item=\${currentItem.id.take(8)} durationMs=\${SystemClock.elapsedRealtime() - decryptStartedAt} success=\${preview != null}"
+                "Preview decryption finished page=${pagerState.currentPage} mediaType=${currentItem.mediaType.name} item=${currentItem.id.take(8)} durationMs=${SystemClock.elapsedRealtime() - decryptStartedAt} success=${preview != null}"
             )
 
             if (preview != null) {
@@ -1649,13 +1649,13 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                         exoPlayer.setMediaItem(MediaItem.fromUri(Uri.fromFile(preview)))
                         CrashReportManager.recordEvent(
                             context,
-                            "Video prepare requested page=\${pagerState.currentPage} item=\${currentItem.id.take(8)}"
+                            "Video prepare requested page=${pagerState.currentPage} item=${currentItem.id.take(8)}"
                         )
                         val prepareCallStartedAt = SystemClock.elapsedRealtime()
                         exoPlayer.prepare()
                         CrashReportManager.recordEvent(
                             context,
-                            "Video prepare() returned page=\${pagerState.currentPage} item=\${currentItem.id.take(8)} callDurationMs=\${SystemClock.elapsedRealtime() - prepareCallStartedAt}"
+                            "Video prepare() returned page=${pagerState.currentPage} item=${currentItem.id.take(8)} callDurationMs=${SystemClock.elapsedRealtime() - prepareCallStartedAt}"
                         )
                         exoPlayer.playWhenReady = true
                     }
