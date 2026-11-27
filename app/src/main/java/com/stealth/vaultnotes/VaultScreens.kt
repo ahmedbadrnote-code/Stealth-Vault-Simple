@@ -1726,6 +1726,10 @@ fun InAppMediaPagerViewer(items: List<VaultFileItem>, initialIndex: Int, onClose
                         },
                         update = { view ->
                             if (view.player !== exoPlayer) view.player = exoPlayer
+                        },
+                        onRelease = { view ->
+                            // Detach the shared player when this page leaves composition.
+                            if (view.player === exoPlayer) view.player = null
                         }
                     )
                     // زر ملء الشاشة وتدوير العرض للفيديو
